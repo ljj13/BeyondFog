@@ -1,5 +1,11 @@
 import { test,expect,type BrowserContext,type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { defaults } from '../../src/shared/preferences';
+test.beforeEach(async({playwright})=>{
+  const c=await playwright.request.newContext({baseURL:'http://127.0.0.1:5173',extraHTTPHeaders:{Origin:'http://127.0.0.1:5173','cf-connecting-ip':'fixture-'+randomUUID()}});
+  expect((await c.post('/api/auth/sign-in/email',{data:{email:'owner@example.com',password:'BeyondFog-test-password-2026'}})).status()).toBe(200);
+  const snap=await (await c.get('/api/preferences')).json() as any;expect((await c.put('/api/preferences',{data:{version:snap.version,data:defaults}})).status()).toBe(200);await c.dispose();
+});
 async function login(context:BrowserContext,page:Page) {
   await context.setExtraHTTPHeaders({'cf-connecting-ip':'test-'+randomUUID()});
   const r=await context.request.post('/api/auth/sign-in/email',{headers:{Origin:'http://127.0.0.1:5173'},data:{email:'owner@example.com',password:'BeyondFog-test-password-2026'}});expect(r.status()).toBe(200);
@@ -42,4 +48,46 @@ test('session expiry removes a private shortcut editor from the page',async({bro
   expect((await context.request.post('/api/auth/sign-out',{headers:{Origin:'http://127.0.0.1:5173'},data:{}})).status()).toBe(200);
   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
   await expect(page.getByRole('button',{name:'登录',exact:true})).toBeVisible();await expect(page.getByRole('dialog',{name:'设置'})).toHaveCount(0);await expect(page.getByLabel('网站名称')).toHaveCount(0);await context.close();
+});
+test('a delayed focus snapshot cannot replace a newer completed save',async({browser})=>{
+  const context=await browser.newContext(),page=await context.newPage();await login(context,page);
+  let release!:()=>void;const barrier=new Promise<void>(r=>release=r);let arrived!:()=>void;const waiting=new Promise<void>(r=>arrived=r);let hold=true;
+  await page.route('**/api/preferences',async route=>{if(hold&&route.request().method()==='GET'){hold=false;const response=await route.fetch();arrived();await barrier;await route.fulfill({response});}else await route.continue();});
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await waiting;
+  await page.getByLabel('搜索引擎').selectOption('bing');await page.getByRole('button',{name:'打开设置',exact:true}).click();await expect(page.getByText('已同步',{exact:true})).toBeVisible();
+  const delivered=page.waitForResponse(r=>r.url().endsWith('/api/preferences')&&r.request().method()==='GET');release();await delivered;
+  await expect(page.getByLabel('搜索引擎',{exact:true})).toHaveValue('bing');
+  await page.unrouteAll();await page.getByLabel('默认搜索引擎').selectOption('google');await expect(page.getByText('已同步',{exact:true})).toBeVisible();await context.close();
+});
+test('logout drains an edit still waiting for autosave debounce',async({browser})=>{
+  const context=await browser.newContext(),page=await context.newPage();await login(context,page);
+  await page.getByRole('button',{name:'打开设置',exact:true}).click();
+  await page.getByLabel('默认搜索引擎').selectOption('baidu');
+  await page.getByRole('button',{name:'账号',exact:true}).click();await page.getByRole('button',{name:'退出登录',exact:true}).click();await expect(page.getByRole('button',{name:'登录',exact:true})).toBeVisible();
+  await login(context,page);await expect(page.getByLabel('搜索引擎')).toHaveValue('baidu');
+  await page.getByRole('button',{name:'打开设置',exact:true}).click();await page.getByLabel('默认搜索引擎').selectOption('google');await expect(page.getByText('已同步',{exact:true})).toBeVisible();await context.close();
+});
+test('logout drains a second edit while an earlier save response is delayed',async({browser})=>{
+  const context=await browser.newContext(),page=await context.newPage();await login(context,page);
+  let release!:()=>void;const barrier=new Promise<void>(r=>release=r);let arrived!:()=>void;const waiting=new Promise<void>(r=>arrived=r);let hold=true;
+  await page.route('**/api/preferences',async route=>{if(hold&&route.request().method()==='PUT'){hold=false;const response=await route.fetch();arrived();await barrier;await route.fulfill({response});}else await route.continue();});
+  await page.getByLabel('搜索引擎').selectOption('bing');await waiting;await page.getByLabel('搜索引擎').selectOption('baidu');
+  await page.getByRole('button',{name:'打开设置',exact:true}).click();await page.getByRole('button',{name:'账号',exact:true}).click();await page.getByRole('button',{name:'退出登录',exact:true}).click();release();await expect(page.getByRole('button',{name:'登录',exact:true})).toBeVisible();
+  await page.unrouteAll();await login(context,page);await expect(page.getByLabel('搜索引擎')).toHaveValue('baidu');
+  await page.getByRole('button',{name:'打开设置',exact:true}).click();await page.getByLabel('默认搜索引擎').selectOption('google');await expect(page.getByText('已同步',{exact:true})).toBeVisible();await context.close();
+});
+test('failed final save retains edits until explicit discard and logout',async({browser})=>{
+  const context=await browser.newContext(),page=await context.newPage();await login(context,page);
+  await page.route('**/api/preferences',route=>route.request().method()==='PUT'?route.fulfill({status:503,json:{error:'测试网络故障'}}):route.continue());
+  await page.getByRole('button',{name:'打开设置',exact:true}).click();await page.getByLabel('默认搜索引擎').selectOption('baidu');await page.getByRole('button',{name:'账号',exact:true}).click();await page.getByRole('button',{name:'退出登录',exact:true}).click();
+  await expect(page.getByText(/尚有未保存的编辑/)).toBeVisible();await expect(page.getByRole('button',{name:'我的空间'})).toBeVisible();await expect(page.getByLabel('搜索引擎',{exact:true})).toHaveValue('baidu');
+  await page.getByRole('button',{name:'放弃本地编辑并退出',exact:true}).click();await expect(page.getByRole('button',{name:'登录',exact:true})).toBeVisible();await context.close();
+});
+test('shortcut capacity is visible and both addition entry points are disabled',async({browser})=>{
+  const context=await browser.newContext(),page=await context.newPage();await login(context,page);
+  const snap=await (await context.request.get('/api/preferences')).json() as any;
+  const shortcuts=Array.from({length:100},(_,i)=>({id:'item-'+i,title:'网站 '+i,url:'https://example.com/'+i}));
+  expect((await context.request.put('/api/preferences',{headers:{Origin:'http://127.0.0.1:5173'},data:{version:snap.version,data:{...defaults,shortcuts}}})).status()).toBe(200);
+  await page.reload();await expect(page.getByRole('button',{name:'添加捷径',exact:true})).toBeDisabled();
+  await page.getByRole('button',{name:'整理捷径'}).click();await expect(page.getByRole('button',{name:'添加',exact:true})).toBeDisabled();await context.close();
 });
