@@ -47,3 +47,14 @@ Remaining external acceptance: owner confirms login plus Gmail receipt/reset/reu
 Ruling: keep feat/beyondfog in the supplied repository, with no merge or push — there is no remote or pre-existing base branch and the requested deliverable is the deployed site. Cost if wrong: future collaboration needs a user-chosen remote/base branch.
 
 Rollback baseline: ae7696be-7136-4225-9ad7-393a478477c7 is the first functional site version; earlier secret-bootstrap deployments contain an empty placeholder Worker. Retain this functional version for subsequent rollback. Cost if wrong: rolling back the first release to a placeholder would take the site offline rather than restore a working prior site.
+
+## Engine dropdown correction — user-approved plan, 2026-10-05
+
+Baseline: d7daab5. Owner now confirms real production login, Gmail receipt and password reset succeeded.
+Tasks: test shared picker interactions; implement accessible glass picker in homepage/settings; verify regression suite and responsive rendering; one fresh review; deploy and inspect the live menu.
+Pre-flight: both selectors read/write the same Preferences.engine through the existing edit/autosave path; browser tests must use visible interaction instead of native selectOption. Modal Escape listener is on document, so an open picker must consume Escape before it reaches that listener.
+Ruling: continue in the existing feat/beyondfog checkout and use this ledger — it is the feature workspace already used for this personal deployment; preserve the current functional deployment for rollback. Cost if wrong: a future unrelated feature would need its own branch/worktree.
+Ruling: implement the fixed three-option picker directly without new dependencies — matches the approved plan and existing React/Lucide stack. Cost if wrong: accessibility and popup positioning require explicit browser verification instead of relying on a component library.
+Task 1: complete — the new visible-listbox test failed against the native select as expected. New browser coverage checks confirmation/cancellation, outside/toggle dismissal, no accidental search, first Escape consumption within Modal, touch targets and popup clipping boundaries.
+Task 2: complete — shared EnginePicker wired to both existing preference editors; engine API/schema unchanged; inline listbox stays inside the modal for focus and accessibility. Menu measures the viewport and panel scrollport and flips above when required. Updated search/sync tests use visible selections rather than selectOption.
+Task 3: complete — npm run typecheck and npm run build passed; npm test: 49/49; npm run test:e2e: 20/20. Screenshots inspected at desktop, mobile and compact 640×360 viewport; no horizontal overflow. Reduced-motion screenshots avoid capturing an intermediate opening-animation frame.
