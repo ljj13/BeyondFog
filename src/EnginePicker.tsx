@@ -15,6 +15,7 @@ export function EnginePicker({ value, onChange, label, variant = 'settings' }: {
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
+  const menuPointer = useRef(false);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const [position, setPosition] = useState({ above: false, left: 0, width: 160, maxHeight: 200 });
@@ -45,16 +46,26 @@ export function EnginePicker({ value, onChange, label, variant = 'settings' }: {
         left: Math.min(Math.max(anchor.left, left), right - width) - anchor.left });
     }
     function outside(e: PointerEvent) {
-      if (!root.current!.contains(e.target as Node)) setOpen(false);
+      if (!root.current!.contains(e.target as Node)) { menuPointer.current = false; setOpen(false); }
+    }
+    function releaseMenuPointer() {
+      if (!menuPointer.current) return;
+      menuPointer.current = false;
+      trigger.current?.focus({ preventScroll: true });
     }
     place();
     window.addEventListener('resize', place);
     window.addEventListener('scroll', place, true);
     document.addEventListener('pointerdown', outside);
+    document.addEventListener('pointerup', releaseMenuPointer);
+    document.addEventListener('pointercancel', releaseMenuPointer);
     return () => {
       window.removeEventListener('resize', place);
       window.removeEventListener('scroll', place, true);
       document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('pointerup', releaseMenuPointer);
+      document.removeEventListener('pointercancel', releaseMenuPointer);
+      menuPointer.current = false;
     };
   }, [open, variant]);
 
@@ -81,11 +92,12 @@ export function EnginePicker({ value, onChange, label, variant = 'settings' }: {
       aria-label={label} aria-haspopup="listbox" aria-expanded={open} aria-controls={`${id}-list`}
       aria-activedescendant={open ? `${id}-${choices[active][0]}` : undefined}
       onClick={() => open ? setOpen(false) : show()} onKeyDown={keyboard}
-      onBlur={() => setOpen(false)}>
+      onBlur={() => { if (!menuPointer.current) setOpen(false); }}>
       <span>{engines[value]}</span><ChevronDown size={14} aria-hidden="true" className={open ? 'expanded' : ''}/>
     </button>
     {open && <div ref={menu} id={`${id}-list`} role="listbox" aria-label={label}
       className={`engine-menu ${position.above ? 'engine-menu-above' : ''}`}
+      onPointerDown={() => { menuPointer.current = true; }}
       style={{ left: position.left, width: position.width, maxHeight: position.maxHeight }}>
       {choices.map(([engine, name], index) => <div key={engine} id={`${id}-${engine}`} role="option"
         aria-selected={engine === value} className={`engine-option ${index === active ? 'engine-option-active' : ''}`}
