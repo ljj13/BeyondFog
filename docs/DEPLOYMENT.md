@@ -15,6 +15,7 @@ Cloudflare 账号必须使用 Workers Free，域名选 Free。项目不调用升
 - 初始邮箱：fogpurification@gmail.com
 - DNSHE 自定义服务器：guy.ns.cloudflare.com、uma.ns.cloudflare.com
 - 注册关闭；密码重置只发送到该已验证 Gmail。send_email 绑定额外限制发送人 noreply@beyondfog.cc.cd。
+- 首个功能部署：`ae7696be-7136-4225-9ad7-393a478477c7`，2026-10-04T17:37:26Z；HTTPS、私人接口保护和注册关闭已在线检查。完整验收状态见 [PROGRESS.md](PROGRESS.md)。
 
 ## 初次部署
 
@@ -56,6 +57,10 @@ npx wrangler rollback <previous-version-id>
 ```
 
 保留 Cloudflare 前一版本，不删除旧部署。D1 迁移仅向前追加，回滚代码不会撤销数据库结构；发布 schema 不兼容变更前在 D1 Time Travel 创建恢复书签（免费可用窗口按平台规则），文档记录迁移兼容性。本版 0001 为初始 schema，无破坏性修改。
+
+当前为首次功能发布，之前的版本只是配置 Secrets 时产生的空 Worker，不能作为可用网站的回滚目标。下一次发布前记录并保留当前功能版本 `ae7696be-7136-4225-9ad7-393a478477c7`。
+
+只读线上检查可运行 `node scripts/production-smoke.mjs`，验证文档响应头、资源、匿名私人接口、关闭注册及错误密码。它会消耗一次登录尝试额度。加 `--send-reset` 会额外请求一封真实重置邮件，仅在需要联调时使用，成功请求仍需在 Gmail 确认实际收件。
 
 诊断使用 `npx wrangler tail --format json`，生产错误日志只记录异常类型；不打印 request URL、headers、password、token、连接密文或上游错误正文。实时 tail 本身会包含平台请求 URL，包含重置 token 的会话不分享日志；项目关闭持久 Observability 日志，避免保存私密链接。控制台 Metrics 检查 Worker/DO CPU、D1 行数与配额；认证计算位于 DO，静态页不触发密码哈希。
 
