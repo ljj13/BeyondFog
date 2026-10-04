@@ -1,3 +1,4 @@
+import { chooseEngine } from './engine-helper';
 import { test,expect,type BrowserContext,type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { defaults } from '../../src/shared/preferences';
@@ -28,19 +29,19 @@ test('a conflicting save preserves the local edit and offers explicit cloud relo
   const a=await browser.newContext(),b=await browser.newContext(),pa=await a.newPage(),pb=await b.newPage();await login(a,pa);await login(b,pb);
   let release!:()=>void;const barrier=new Promise<void>(r=>release=r);let arrived!:()=>void;const waiting=new Promise<void>(r=>arrived=r);
   await pa.route('**/api/preferences',async route=>{if(route.request().method()==='PUT'){arrived();await barrier;}await route.continue();});
-  await pa.getByLabel('搜索引擎').selectOption('baidu');await waiting;
-  await pb.getByLabel('搜索引擎').selectOption('bing');await pb.getByRole('button',{name:'打开设置'}).click();await expect(pb.getByText('已同步',{exact:true})).toBeVisible();release();
-  await pa.getByRole('button',{name:'打开设置'}).click();await expect(pa.getByText('同步冲突',{exact:true})).toBeVisible();await expect(pa.getByLabel('搜索引擎',{exact:true})).toHaveValue('baidu');
-  await pa.getByRole('button',{name:'加载云端（放弃本地编辑）'}).click();await expect(pa.getByLabel('搜索引擎',{exact:true})).toHaveValue('bing');
-  await pa.getByLabel('默认搜索引擎').selectOption('google');await expect(pa.getByText('已同步',{exact:true})).toBeVisible();await a.close();await b.close();
+  await chooseEngine(pa, '搜索引擎', '百度');await waiting;
+  await chooseEngine(pb, '搜索引擎', '必应');await pb.getByRole('button',{name:'打开设置'}).click();await expect(pb.getByText('已同步',{exact:true})).toBeVisible();release();
+  await pa.getByRole('button',{name:'打开设置'}).click();await expect(pa.getByText('同步冲突',{exact:true})).toBeVisible();await expect(pa.getByLabel('搜索引擎',{exact:true})).toHaveText('百度');
+  await pa.getByRole('button',{name:'加载云端（放弃本地编辑）'}).click();await expect(pa.getByLabel('搜索引擎',{exact:true})).toHaveText('必应');
+  await chooseEngine(pa, '默认搜索引擎', 'Google');await expect(pa.getByText('已同步',{exact:true})).toBeVisible();await a.close();await b.close();
 });
 test('focus refresh during a successful in-flight autosave does not flag an own-write conflict',async({browser})=>{
   const context=await browser.newContext(),page=await context.newPage();await login(context,page);
   let release!:()=>void;const barrier=new Promise<void>(r=>release=r);let arrived!:()=>void;const waiting=new Promise<void>(r=>arrived=r);
   await page.route('**/api/preferences',async route=>{if(route.request().method()==='PUT'){const r=await route.fetch();arrived();await barrier;await route.fulfill({response:r});}else await route.continue();});
-  await page.getByLabel('搜索引擎').selectOption('bing');await waiting;await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await page.waitForResponse(r=>r.url().endsWith('/api/preferences')&&r.request().method()==='GET');release();
+  await chooseEngine(page, '搜索引擎', '必应');await waiting;await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await page.waitForResponse(r=>r.url().endsWith('/api/preferences')&&r.request().method()==='GET');release();
   await page.getByRole('button',{name:'打开设置',exact:true}).click();await expect(page.getByText('已同步',{exact:true})).toBeVisible();await expect(page.getByRole('button',{name:/设置同步冲突/})).toHaveCount(0);
-  await page.unrouteAll();await page.getByLabel('默认搜索引擎').selectOption('google');await expect(page.getByText('已同步',{exact:true})).toBeVisible();await context.close();
+  await page.unrouteAll();await chooseEngine(page, '默认搜索引擎', 'Google');await expect(page.getByText('已同步',{exact:true})).toBeVisible();await context.close();
 });
 test('session expiry removes a private shortcut editor from the page',async({browser})=>{
   const context=await browser.newContext(),page=await context.newPage();await login(context,page);
@@ -54,33 +55,33 @@ test('a delayed focus snapshot cannot replace a newer completed save',async({bro
   let release!:()=>void;const barrier=new Promise<void>(r=>release=r);let arrived!:()=>void;const waiting=new Promise<void>(r=>arrived=r);let hold=true;
   await page.route('**/api/preferences',async route=>{if(hold&&route.request().method()==='GET'){hold=false;const response=await route.fetch();arrived();await barrier;await route.fulfill({response});}else await route.continue();});
   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await waiting;
-  await page.getByLabel('搜索引擎').selectOption('bing');await page.getByRole('button',{name:'打开设置',exact:true}).click();await expect(page.getByText('已同步',{exact:true})).toBeVisible();
+  await chooseEngine(page, '搜索引擎', '必应');await page.getByRole('button',{name:'打开设置',exact:true}).click();await expect(page.getByText('已同步',{exact:true})).toBeVisible();
   const delivered=page.waitForResponse(r=>r.url().endsWith('/api/preferences')&&r.request().method()==='GET');release();await delivered;
-  await expect(page.getByLabel('搜索引擎',{exact:true})).toHaveValue('bing');
-  await page.unrouteAll();await page.getByLabel('默认搜索引擎').selectOption('google');await expect(page.getByText('已同步',{exact:true})).toBeVisible();await context.close();
+  await expect(page.getByLabel('搜索引擎',{exact:true})).toHaveText('必应');
+  await page.unrouteAll();await chooseEngine(page, '默认搜索引擎', 'Google');await expect(page.getByText('已同步',{exact:true})).toBeVisible();await context.close();
 });
 test('logout drains an edit still waiting for autosave debounce',async({browser})=>{
   const context=await browser.newContext(),page=await context.newPage();await login(context,page);
   await page.getByRole('button',{name:'打开设置',exact:true}).click();
-  await page.getByLabel('默认搜索引擎').selectOption('baidu');
+  await chooseEngine(page, '默认搜索引擎', '百度');
   await page.getByRole('button',{name:'账号',exact:true}).click();await page.getByRole('button',{name:'退出登录',exact:true}).click();await expect(page.getByRole('button',{name:'登录',exact:true})).toBeVisible();
-  await login(context,page);await expect(page.getByLabel('搜索引擎')).toHaveValue('baidu');
-  await page.getByRole('button',{name:'打开设置',exact:true}).click();await page.getByLabel('默认搜索引擎').selectOption('google');await expect(page.getByText('已同步',{exact:true})).toBeVisible();await context.close();
+  await login(context,page);await expect(page.getByLabel('搜索引擎')).toHaveText('百度');
+  await page.getByRole('button',{name:'打开设置',exact:true}).click();await chooseEngine(page, '默认搜索引擎', 'Google');await expect(page.getByText('已同步',{exact:true})).toBeVisible();await context.close();
 });
 test('logout drains a second edit while an earlier save response is delayed',async({browser})=>{
   const context=await browser.newContext(),page=await context.newPage();await login(context,page);
   let release!:()=>void;const barrier=new Promise<void>(r=>release=r);let arrived!:()=>void;const waiting=new Promise<void>(r=>arrived=r);let hold=true;
   await page.route('**/api/preferences',async route=>{if(hold&&route.request().method()==='PUT'){hold=false;const response=await route.fetch();arrived();await barrier;await route.fulfill({response});}else await route.continue();});
-  await page.getByLabel('搜索引擎').selectOption('bing');await waiting;await page.getByLabel('搜索引擎').selectOption('baidu');
+  await chooseEngine(page, '搜索引擎', '必应');await waiting;await chooseEngine(page, '搜索引擎', '百度');
   await page.getByRole('button',{name:'打开设置',exact:true}).click();await page.getByRole('button',{name:'账号',exact:true}).click();await page.getByRole('button',{name:'退出登录',exact:true}).click();release();await expect(page.getByRole('button',{name:'登录',exact:true})).toBeVisible();
-  await page.unrouteAll();await login(context,page);await expect(page.getByLabel('搜索引擎')).toHaveValue('baidu');
-  await page.getByRole('button',{name:'打开设置',exact:true}).click();await page.getByLabel('默认搜索引擎').selectOption('google');await expect(page.getByText('已同步',{exact:true})).toBeVisible();await context.close();
+  await page.unrouteAll();await login(context,page);await expect(page.getByLabel('搜索引擎')).toHaveText('百度');
+  await page.getByRole('button',{name:'打开设置',exact:true}).click();await chooseEngine(page, '默认搜索引擎', 'Google');await expect(page.getByText('已同步',{exact:true})).toBeVisible();await context.close();
 });
 test('failed final save retains edits until explicit discard and logout',async({browser})=>{
   const context=await browser.newContext(),page=await context.newPage();await login(context,page);
   await page.route('**/api/preferences',route=>route.request().method()==='PUT'?route.fulfill({status:503,json:{error:'测试网络故障'}}):route.continue());
-  await page.getByRole('button',{name:'打开设置',exact:true}).click();await page.getByLabel('默认搜索引擎').selectOption('baidu');await page.getByRole('button',{name:'账号',exact:true}).click();await page.getByRole('button',{name:'退出登录',exact:true}).click();
-  await expect(page.getByText(/尚有未保存的编辑/)).toBeVisible();await expect(page.getByRole('button',{name:'我的空间'})).toBeVisible();await expect(page.getByLabel('搜索引擎',{exact:true})).toHaveValue('baidu');
+  await page.getByRole('button',{name:'打开设置',exact:true}).click();await chooseEngine(page, '默认搜索引擎', '百度');await page.getByRole('button',{name:'账号',exact:true}).click();await page.getByRole('button',{name:'退出登录',exact:true}).click();
+  await expect(page.getByText(/尚有未保存的编辑/)).toBeVisible();await expect(page.getByRole('button',{name:'我的空间'})).toBeVisible();await expect(page.getByLabel('搜索引擎',{exact:true})).toHaveText('百度');
   await page.getByRole('button',{name:'放弃本地编辑并退出',exact:true}).click();await expect(page.getByRole('button',{name:'登录',exact:true})).toBeVisible();await context.close();
 });
 test('shortcut capacity is visible and both addition entry points are disabled',async({browser})=>{
