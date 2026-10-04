@@ -16,6 +16,7 @@ Cloudflare 账号必须使用 Workers Free，域名选 Free。项目不调用升
 - DNSHE 自定义服务器：guy.ns.cloudflare.com、uma.ns.cloudflare.com
 - 注册关闭；密码重置只发送到该已验证 Gmail。send_email 绑定额外限制发送人 noreply@beyondfog.cc.cd。
 - 首个功能部署：`ae7696be-7136-4225-9ad7-393a478477c7`，2026-10-04T17:37:26Z；HTTPS、私人接口保护和注册关闭已在线检查。完整验收状态见 [PROGRESS.md](PROGRESS.md)。
+- 当前部署：`2b53c607-1edb-4fb1-af3b-e99c53ea786a`，2026-10-05 02:25:42（新加坡时间）；首页和设置已使用共用毛玻璃引擎菜单，线上电脑、手机、紧凑窗口选择与滚动已验证。
 
 ## 初次部署
 
@@ -58,7 +59,7 @@ npx wrangler rollback <previous-version-id>
 
 保留 Cloudflare 前一版本，不删除旧部署。D1 迁移仅向前追加，回滚代码不会撤销数据库结构；发布 schema 不兼容变更前在 D1 Time Travel 创建恢复书签（免费可用窗口按平台规则），文档记录迁移兼容性。本版 0001 为初始 schema，无破坏性修改。
 
-当前为首次功能发布，之前的版本只是配置 Secrets 时产生的空 Worker，不能作为可用网站的回滚目标。下一次发布前记录并保留当前功能版本 `ae7696be-7136-4225-9ad7-393a478477c7`。
+首次功能版本 `ae7696be-7136-4225-9ad7-393a478477c7` 已保留，可恢复最初的可用首页。更早的版本只是配置 Secrets 时产生的空 Worker，不能作为可用网站的回滚目标。下一次发布前记录并保留当前版本 `2b53c607-1edb-4fb1-af3b-e99c53ea786a`。Cloudflare 部署列表也保留中间版本；回滚时选择已验收的功能版本。
 
 只读线上检查可运行 `node scripts/production-smoke.mjs`，验证文档响应头、资源、匿名私人接口、关闭注册及错误密码。它会消耗一次登录尝试额度。加 `--send-reset` 会额外请求一封真实重置邮件，仅在需要联调时使用，成功请求仍需在 Gmail 确认实际收件。
 
