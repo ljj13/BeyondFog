@@ -69,3 +69,15 @@ Verification notes: a transient simulator exit caused connection reset/refused i
 Final regression with popup-only scrolling: npm test 49/49; npm run test:e2e 22/22 (57.8 seconds). No remaining local failures.
 Task 4: complete — final build/typecheck passed and deployed 2b53c607-1edb-4fb1-af3b-e99c53ea786a at 2026-10-04T18:25:42Z (2026-10-05 02:25:42 Singapore). Live Chromium verified homepage/settings selection and Escape, actual native-scrollbar dragging at 640×400, last-selected visibility and panel stability at 640×360, mobile tap selection at 390×844, no horizontal overflow and zero page errors. Production screenshots inspected in .artifacts/production-picker-*.png.
 Rollback verified: Cloudflare deployments list retains ae7696be-7136-4225-9ad7-393a478477c7 and the intermediate dropdown version 0be4d4c7-d0ce-4b2b-9710-393db165caf0 alongside the current final release. No server API, migration, dependency or credential change. Feature checkout committed; no merge/push needed for this direct-deployment repository.
+
+## Shortcut icons — plan: docs/ICON-PLAN.md
+
+2026-10-05. BASE 13e80ee1c8633d0ef6d535e1cc3daabe0bf9d004. User approved all-site icons directly from original sites, with initials fallback. Continuing the existing feat/beyondfog checkout and direct-deployment workflow previously selected in this session; no new worktree, merge or push. Pre-flight: homepage/settings consume the same component; document/API CSP must both allow HTTPS image sources. No schema or API change. Task 1 started: browser regressions written before implementation.
+
+Task 1 RED: new browser regressions 0/3 passed, failing because no favicon image or initial fallback exists. Shared component/CSP implementation follows; URL edits remount image state, title edits preserve loaded images but update initials.
+
+Test transport investigation: Playwright 1.63 classifies every URL ending /favicon.ico as a browser favicon and aborts intercepted requests before page.route handlers. A standalone CDP experiment decoded the same PNG successfully. Tests now intercept only external Image requests via CDP Fetch, leaving the app and image load/error events real; no production workaround or URL query added.
+
+Task 1 icon regressions GREEN: 3/3 passed; typecheck, build and unit suite 49/49 passed. Full regression exposed an existing order-test assertion reading decorative initials along with the title (index -1 instead of 4); it now reads the displayed title span. Actual accessible link names and order were correct.
+
+Task 1 local completion: typecheck/build passed, npm test 49/49, full npm run test:e2e 25/25 (1.5m), git diff --check clean. Fresh reviewer icon_review found no Critical/Important/Minor issues. Its production availability/CSP checks remain for live acceptance below. Prior deployment 2b53c607-1edb-4fb1-af3b-e99c53ea786a confirmed in deployments list before publishing.

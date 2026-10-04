@@ -17,7 +17,7 @@ test('shortcut CRUD and button order sync across two browsers, logout clears pri
   await pa.getByRole('button',{name:'添加捷径',exact:true}).click();await pa.getByLabel('网站名称').fill('私人测试捷径');await pa.getByLabel('网站地址').fill('https://example.com/private');await pa.getByRole('button',{name:'保存捷径'}).click();await expect(pa.getByText('已同步',{exact:true})).toBeVisible();
   await pa.getByRole('button',{name:'上移 私人测试捷径'}).click();await expect(pa.getByText('已同步',{exact:true})).toBeVisible();
   await pb.evaluate(()=>window.dispatchEvent(new Event('focus')));await expect(pb.getByRole('link',{name:'私人测试捷径',exact:true})).toBeVisible();
-  const titles=await pb.locator('.shortcut-link').allTextContents();expect(titles.indexOf('私人测试捷径')).toBe(titles.length-2);
+  const titles=await pb.locator('.shortcut-link > span:last-child').allTextContents();expect(titles.indexOf('私人测试捷径')).toBe(titles.length-2);
   await pa.getByRole('button',{name:'编辑 私人测试捷径',exact:true}).click();await pa.getByLabel('网站名称').fill('修改后的私人捷径');await pa.getByRole('button',{name:'保存捷径'}).click();await expect(pa.getByText('已同步',{exact:true})).toBeVisible();
   await pa.getByRole('button',{name:'删除 修改后的私人捷径'}).click();await expect(pa.getByText('已同步',{exact:true})).toBeVisible();
   await pa.getByRole('button',{name:'添加',exact:true}).click();await pa.getByLabel('网站名称').fill('退出清除测试');await pa.getByLabel('网站地址').fill('https://example.com/logout');await pa.getByRole('button',{name:'保存捷径'}).click();await expect(pa.getByText('已同步',{exact:true})).toBeVisible();

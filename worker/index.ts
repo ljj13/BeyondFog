@@ -92,7 +92,7 @@ export default {
     if (url.protocol === 'https:') result.headers.set('Strict-Transport-Security','max-age=31536000');
     if (url.pathname.startsWith('/api/')) result.headers.set('Cache-Control','no-store, private');
     // Vite HMR needs ws/eval in development only.
-    if (url.protocol === 'https:') result.headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'");
+    if (url.protocol === 'https:') result.headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: https:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'");
     return result;
   },
 } satisfies ExportedHandler<Env>;
