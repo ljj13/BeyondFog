@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+// Expose native scrollbars, which headless Chromium otherwise hides.
+test.use({ launchOptions: { ignoreDefaultArgs: ['--hide-scrollbars'] } });
 
 test('engine picker opens a readable menu and selects without submitting search', async ({ page }) => {
   await page.goto('/');
@@ -83,4 +85,29 @@ test('menus fit narrow screens and the scrollable settings panel', async ({ brow
   await page.getByRole('option', { name: '必应', exact: true }).tap();
   await expect(page.getByRole('combobox', { name: '默认搜索引擎', exact: true })).toHaveText('必应');
   await context.close();
+});
+
+test('a compact settings popup stays open while its scrollbar is dragged', async ({ page }) => {
+  await page.setViewportSize({ width: 640, height: 360 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/'); await page.getByRole('button', { name: '打开设置' }).click();
+  const trigger = page.getByRole('combobox', { name: '默认搜索引擎', exact: true });
+  await trigger.click();
+  const menu = page.getByRole('listbox', { name: '默认搜索引擎', exact: true });
+  const bounds = (await menu.boundingBox())!;
+  expect(await menu.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+  await page.mouse.move(bounds.x + bounds.width - 4, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await page.mouse.move(bounds.x + bounds.width - 4, bounds.y + bounds.height - 5, { steps: 8 });
+  await page.mouse.up();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await expect.poll(() => menu.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+  await page.getByRole('option', { name: '百度', exact: true }).click();
+  await expect(trigger).toHaveText('百度'); await expect(trigger).toBeFocused();
+  await trigger.press('ArrowDown'); await trigger.press('Escape');
+  await expect(page.getByRole('dialog', { name: '设置' })).toBeVisible();
+  await trigger.press('Home'); await trigger.press('Tab');
+  await expect(trigger).toHaveText('Google');
+  await expect(page.getByRole('checkbox', { name: '在新标签页打开搜索结果' })).toBeFocused();
 });
