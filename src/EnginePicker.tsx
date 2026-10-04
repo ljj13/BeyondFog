@@ -70,8 +70,16 @@ export function EnginePicker({ value, onChange, label, variant = 'settings' }: {
   }, [open, variant]);
 
   useLayoutEffect(() => {
-    if (open) menu.current?.querySelectorAll<HTMLElement>('[role="option"]')[active]?.scrollIntoView({ block: 'nearest' });
-  }, [open, active]);
+    if (!open) return;
+    const scroller = menu.current;
+    const option = scroller?.querySelectorAll<HTMLElement>('[role="option"]')[active];
+    if (!scroller || !option) return;
+    const top = option.offsetTop;
+    const bottom = top + option.offsetHeight;
+    // Scroll only the popup: scrollIntoView can move the containing settings panel.
+    if (top < scroller.scrollTop || option.offsetHeight > scroller.clientHeight) scroller.scrollTop = top;
+    else if (bottom > scroller.scrollTop + scroller.clientHeight) scroller.scrollTop = bottom - scroller.clientHeight;
+  }, [open, active, position.maxHeight]);
 
   function keyboard(e: KeyboardEvent<HTMLButtonElement>) {
     if (e.key === 'Escape' && open) {
