@@ -4,15 +4,16 @@ import { test, expect, type Page } from '@playwright/test';
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3n8AAAAASUVORK5CYII=', 'base64');
 // Playwright's page.route aborts every /favicon.ico before user handlers run.
 // Intercept only the external image transport through Chromium instead.
-async function mockFavicons(page: Page, respond: (url: string, headers: Record<string, string>) => number | Promise<number>) {
+async function mockFavicons(page: Page, respond: (url: string, headers: Record<string, string>) => number | 'html' | Promise<number | 'html'>) {
   const session = await page.context().newCDPSession(page);
   await session.send('Fetch.enable', { patterns: [{ urlPattern: 'https://*/favicon.ico', resourceType: 'Image' }] });
   session.on('Fetch.requestPaused', async event => {
-    const status = await respond(event.request.url, event.request.headers);
+    const response = await respond(event.request.url, event.request.headers);
+    const status = response === 'html' ? 200 : response;
     await session.send('Fetch.fulfillRequest', {
       requestId: event.requestId, responseCode: status,
-      responseHeaders: [{ name: 'Content-Type', value: status === 200 ? 'image/png' : 'text/plain' }],
-      body: (status === 200 ? png : Buffer.from('No icon')).toString('base64'),
+      responseHeaders: [{ name: 'Content-Type', value: response === 'html' ? 'text/html' : status === 200 ? 'image/png' : 'text/plain' }],
+      body: (response === 'html' ? Buffer.from('<html><body>Login page</body></html>') : status === 200 ? png : Buffer.from('No icon')).toString('base64'),
     });
   });
   return session;
@@ -44,12 +45,12 @@ test('default and newly added shortcuts show original-site icons in both layouts
   await expect(github.locator('.site-icon-fallback')).toHaveCount(0);
   await addShortcut(page, '京东', 'https://www.jd.com/products?token=private#fragment');
   const jd = page.getByRole('link', { name: '京东', exact: true });
-  await expect(jd.locator('img')).toHaveAttribute('src', 'https://www.jd.com/favicon.ico');
+  await expect(jd.locator('img')).toHaveAttribute('src', 'https://storage.360buyimg.com/retail-mall/mall-common-component/favicon.ico');
   await expect.poll(() => jd.locator('img').evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1);
   const row = page.locator('.shortcut-row').filter({ has: page.getByText('京东', { exact: true }) });
   await expect(row.locator('img')).toBeVisible();
   await expect(row.locator('.site-icon-fallback')).toHaveCount(0);
-  expect(requests.some(r => r.url === 'https://www.jd.com/favicon.ico')).toBe(true);
+  expect(requests.some(r => r.url === 'https://storage.360buyimg.com/retail-mall/mall-common-component/favicon.ico')).toBe(true);
   expect(requests.every(r => !r.referer && !r.url.includes('private'))).toBe(true);
   await expect(jd).toHaveAttribute('href', 'https://www.jd.com/products?token=private#fragment');
 });
@@ -99,4 +100,32 @@ test('HTTP shortcuts retain their URL and use initials without requesting insecu
   await expect(link).toBeVisible();
   expect(insecure).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+for (const host of ['home.jd.com', 'jd.com', 'www.jd.com']) test(`${host} uses the website-declared JD icon without changing the shortcut`, async ({ page }) => {
+  await mockFavicons(page, url => url === 'https://storage.360buyimg.com/retail-mall/mall-common-component/favicon.ico' ? 200 : 'html');
+  await page.goto('/');
+  await addShortcut(page, '京东', `https://${host}/products?private=value#section`);
+  const link = page.getByRole('link', { name: '京东', exact: true });
+  await expect(link.locator('img.is-loaded')).toBeVisible();
+  await expect(link.locator('img')).toHaveAttribute('src', 'https://storage.360buyimg.com/retail-mall/mall-common-component/favicon.ico');
+  await expect(link).toHaveAttribute('href', `https://${host}/products?private=value#section`);
+  await expect(link.locator('.site-icon-fallback')).toHaveCount(0);
+  const row = page.locator('.shortcut-row').filter({ has: page.getByText('京东', { exact: true }) });
+  await expect(row.locator('img.is-loaded')).toBeVisible();
+});
+
+test('JD icon failures keep initials and lookalike domains use their own origin', async ({ page }) => {
+  let ready = false;
+  await mockFavicons(page, url => ready && url === 'https://notjd.com/favicon.ico' ? 200 : 404);
+  await page.goto('/');
+  await addShortcut(page, '京东', 'https://home.jd.com/');
+  const link = page.getByRole('link', { name: '京东', exact: true });
+  await expect(link.locator('.site-icon-fallback')).toHaveText('京');
+  await expect(link.locator('img')).toHaveCount(0);
+  await editShortcut(page, '京东', '其他网站', 'https://notjd.com/path');
+  await expect(page.getByRole('link', { name: '其他网站', exact: true }).locator('.site-icon-fallback')).toHaveText('其');
+  ready = true;
+  await editShortcut(page, '其他网站', '其他网站', 'https://notjd.com/new-path');
+  await expect(page.getByRole('link', { name: '其他网站', exact: true }).locator('img.is-loaded')).toHaveAttribute('src', 'https://notjd.com/favicon.ico');
 });
