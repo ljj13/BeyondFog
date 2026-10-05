@@ -62,7 +62,8 @@ export function usePreferences() {
   useEffect(()=>{if(!dirty.current)return;const t=setTimeout(()=>{if(!busy.current&&!exiting.current)saving.current=flush();},550);return()=>clearTimeout(t);},[data,flush]);
   const edit=useCallback((fn:(old:Preferences)=>Preferences)=>{
     if(exiting.current)return;
-    current.current=preferencesSchema.parse(fn(current.current));seq.current++;dirty.current=Boolean(actor.current);setData(current.current);setStatus(actor.current?'等待保存':'访客模式');
+    const next=fn(current.current);if(next===current.current)return;
+    current.current=preferencesSchema.parse(next);seq.current++;dirty.current=Boolean(actor.current);setData(current.current);setStatus(actor.current?'等待保存':'访客模式');
   },[]);
   const login=useCallback(async()=>{generation.current++;dirty.current=false;blocked.current=false;await load(true);},[load]);
   const logout=useCallback(async(discard=false)=>{

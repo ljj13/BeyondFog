@@ -6,7 +6,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 // Intercept only the external image transport through Chromium instead.
 async function mockFavicons(page: Page, respond: (url: string, headers: Record<string, string>) => number | 'html' | Promise<number | 'html'>) {
   const session = await page.context().newCDPSession(page);
-  await session.send('Fetch.enable', { patterns: [{ urlPattern: 'https://*/favicon.ico', resourceType: 'Image' }] });
+  await session.send('Fetch.enable', { patterns: [{ urlPattern: 'https://*/*.ico', resourceType: 'Image' }] });
   session.on('Fetch.requestPaused', async event => {
     const response = await respond(event.request.url, event.request.headers);
     const status = response === 'html' ? 200 : response;
@@ -128,4 +128,14 @@ test('JD icon failures keep initials and lookalike domains use their own origin'
   ready = true;
   await editShortcut(page, '其他网站', '其他网站', 'https://notjd.com/new-path');
   await expect(page.getByRole('link', { name: '其他网站', exact: true }).locator('img.is-loaded')).toHaveAttribute('src', 'https://notjd.com/favicon.ico');
+});
+
+
+test('Gmail uses its official icon and keeps initials if that image fails',async({browser})=>{
+  const success=await browser.newContext(),page=await success.newPage();
+  await mockFavicons(page,(url,headers)=>{expect(Object.keys(headers).some(k=>k.toLowerCase()==='referer')).toBe(false);return 200;});
+  await page.goto('/?private=do-not-send');const gmail=page.getByRole('link',{name:'Gmail',exact:true});await expect(gmail.locator('img')).toHaveAttribute('src','https://ssl.gstatic.com/ui/v1/icons/mail/rfr/gmail.ico');await expect.poll(()=>gmail.locator('img').evaluate((e:HTMLImageElement)=>e.naturalWidth)).toBe(1);await success.close();
+  // Fresh context prevents a previously decoded Google icon masking a transport error.
+  const failure=await browser.newContext(),failed=await failure.newPage();await mockFavicons(failed,()=>404);await failed.goto('/');await expect(failed.getByRole('link',{name:'Gmail',exact:true}).locator('.site-icon-fallback')).toHaveText('G');await expect(failed.getByRole('link',{name:'Gmail',exact:true}).locator('img')).toHaveCount(0);
+  await failed.getByRole('button',{name:'整理捷径',exact:true}).click();await editShortcut(failed,'Gmail','我的 Gmail','https://mail.google.com/mail/u/1/');await expect(failed.getByRole('link',{name:'我的 Gmail',exact:true}).locator('.site-icon-fallback')).toHaveText('我');await failure.close();
 });

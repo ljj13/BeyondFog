@@ -8,6 +8,7 @@ export function ShortcutIcon({ url, title }: { url: string; title: string }) {
       src = new URL('/favicon.ico', site.origin).href;
       // JD declares this dog icon in its own HTML. The root file is an old
       // JD logo on www.jd.com and an HTML page on home.jd.com.
+      if (site.hostname === 'mail.google.com') src = 'https://ssl.gstatic.com/ui/v1/icons/mail/rfr/gmail.ico';
       if (site.hostname === 'jd.com' || site.hostname.endsWith('.jd.com')) {
         src = 'https://storage.360buyimg.com/retail-mall/mall-common-component/favicon.ico';
       }
