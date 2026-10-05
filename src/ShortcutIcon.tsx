@@ -4,7 +4,14 @@ export function ShortcutIcon({ url, title }: { url: string; title: string }) {
   let src: string | undefined;
   try {
     const site = new URL(url);
-    if (site.protocol === 'https:') src = new URL('/favicon.ico', site.origin).href;
+    if (site.protocol === 'https:') {
+      src = new URL('/favicon.ico', site.origin).href;
+      // JD declares this dog icon in its own HTML. The root file is an old
+      // JD logo on www.jd.com and an HTML page on home.jd.com.
+      if (site.hostname === 'jd.com' || site.hostname.endsWith('.jd.com')) {
+        src = 'https://storage.360buyimg.com/retail-mall/mall-common-component/favicon.ico';
+      }
+    }
   } catch { /* An invalid or non-HTTPS address uses the name instead. */ }
   // Remount on URL edits so load/error state cannot belong to the previous site.
   return <IconImage key={url} src={src} title={title} />;
