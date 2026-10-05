@@ -5,7 +5,7 @@ import { defaults } from '../../src/shared/preferences';
 test.beforeEach(async({playwright})=>{
   const c=await playwright.request.newContext({baseURL:'http://127.0.0.1:5173',extraHTTPHeaders:{Origin:'http://127.0.0.1:5173','cf-connecting-ip':'fixture-'+randomUUID()}});
   expect((await c.post('/api/auth/sign-in/email',{data:{email:'owner@example.com',password:'BeyondFog-test-password-2026'}})).status()).toBe(200);
-  const snap=await (await c.get('/api/preferences')).json() as any;expect((await c.put('/api/preferences',{data:{version:snap.version,data:defaults}})).status()).toBe(200);await c.dispose();
+  const snap=await (await c.get('/api/preferences')).json() as any;expect((await c.put('/api/preferences',{data:{schemaVersion:2,version:snap.version,data:defaults}})).status()).toBe(200);await c.dispose();
 });
 async function login(context:BrowserContext,page:Page) {
   await context.setExtraHTTPHeaders({'cf-connecting-ip':'test-'+randomUUID()});
@@ -23,7 +23,7 @@ test('shortcut CRUD and button order sync across two browsers, logout clears pri
   await pa.getByRole('button',{name:'添加',exact:true}).click();await pa.getByLabel('网站名称').fill('退出清除测试');await pa.getByLabel('网站地址').fill('https://example.com/logout');await pa.getByRole('button',{name:'保存捷径'}).click();await expect(pa.getByText('已同步',{exact:true})).toBeVisible();
   await pa.getByRole('button',{name:'账号',exact:true}).click();await pa.getByRole('button',{name:'退出登录',exact:true}).click();await expect(pa.getByRole('button',{name:'登录',exact:true})).toBeVisible();await expect(pa.getByRole('link',{name:'退出清除测试'})).toHaveCount(0);
   // Restore through the other session so tests leave clean preferences.
-  const snap=await (await b.request.get('/api/preferences')).json() as any;await b.request.put('/api/preferences',{headers:{Origin:'http://127.0.0.1:5173'},data:{version:snap.version,data:{...snap.data,shortcuts:snap.data.shortcuts.filter((s:any)=>s.title!=='退出清除测试')}}});await a.close();await b.close();
+  const snap=await (await b.request.get('/api/preferences')).json() as any;await b.request.put('/api/preferences',{headers:{Origin:'http://127.0.0.1:5173'},data:{schemaVersion:2,version:snap.version,data:{...snap.data,shortcuts:snap.data.shortcuts.filter((s:any)=>s.title!=='退出清除测试')}}});await a.close();await b.close();
 });
 test('a conflicting save preserves the local edit and offers explicit cloud reload',async({browser})=>{
   const a=await browser.newContext(),b=await browser.newContext(),pa=await a.newPage(),pb=await b.newPage();await login(a,pa);await login(b,pb);
@@ -88,7 +88,7 @@ test('shortcut capacity is visible and both addition entry points are disabled',
   const context=await browser.newContext(),page=await context.newPage();await login(context,page);
   const snap=await (await context.request.get('/api/preferences')).json() as any;
   const shortcuts=Array.from({length:100},(_,i)=>({id:'item-'+i,title:'网站 '+i,url:'https://example.com/'+i}));
-  expect((await context.request.put('/api/preferences',{headers:{Origin:'http://127.0.0.1:5173'},data:{version:snap.version,data:{...defaults,shortcuts}}})).status()).toBe(200);
+  expect((await context.request.put('/api/preferences',{headers:{Origin:'http://127.0.0.1:5173'},data:{schemaVersion:2,version:snap.version,data:{...defaults,shortcuts}}})).status()).toBe(200);
   await page.reload();await expect(page.getByRole('button',{name:'添加捷径',exact:true})).toBeDisabled();
   await page.getByRole('button',{name:'整理捷径'}).click();await expect(page.getByRole('button',{name:'添加',exact:true})).toBeDisabled();await context.close();
 });
@@ -117,7 +117,7 @@ test('100 sites scroll in a bounded popup, 20 folders cap creation, edges and zo
   const context=await browser.newContext({viewport:{width:900,height:600}}),page=await context.newPage();await login(context,page);
   const snap=await (await context.request.get('/api/preferences')).json() as any;
   const folders=Array.from({length:20},(_,i)=>({id:'f'+i,name:'文件夹 '+i})),shortcuts=Array.from({length:100},(_,i)=>({id:'s'+i,title:'网站 '+i,url:'https://example.com/'+i,folderId:'f19'}));
-  expect((await context.request.put('/api/preferences',{headers:{Origin:'http://127.0.0.1:5173'},data:{version:snap.version,data:{...defaults,shortcutLayout:'folders',folders,shortcuts}}})).status()).toBe(200);
+  expect((await context.request.put('/api/preferences',{headers:{Origin:'http://127.0.0.1:5173'},data:{schemaVersion:2,version:snap.version,data:{...defaults,shortcutLayout:'folders',folders,shortcuts}}})).status()).toBe(200);
   await page.reload({waitUntil:'domcontentloaded'});await expect(page.getByRole('button',{name:'添加文件夹',exact:true})).toBeDisabled();
   await page.getByRole('button',{name:'文件夹 文件夹 19',exact:true}).click();const popup=page.getByRole('region',{name:'文件夹 19中的网站'});await expect(popup).toBeVisible();
   await expect(popup).toHaveAttribute('data-direction','up');
@@ -135,11 +135,11 @@ test('an open editor handles capacity and deleted folder after a cloud refresh w
   await page.getByRole('button',{name:'整理捷径',exact:true}).click();await page.getByRole('button',{name:'新建文件夹',exact:true}).click();await page.getByLabel('文件夹名称',{exact:true}).fill('稍后保存');
   let snap=await (await context.request.get('/api/preferences')).json() as any;
   const folders=Array.from({length:20},(_,i)=>({id:'f'+i,name:'远端 '+i}));
-  expect((await context.request.put('/api/preferences',{headers:{Origin:'http://127.0.0.1:5173'},data:{version:snap.version,data:{...defaults,folders}}})).status()).toBe(200);await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await expect(page.locator('.folder-row-name')).toHaveCount(20);
+  expect((await context.request.put('/api/preferences',{headers:{Origin:'http://127.0.0.1:5173'},data:{schemaVersion:2,version:snap.version,data:{...defaults,folders}}})).status()).toBe(200);await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await expect(page.locator('.folder-row-name')).toHaveCount(20);
   await page.getByRole('button',{name:'保存文件夹',exact:true}).click();await expect(page.getByRole('alert')).toContainText('最多 20');expect(errors).toEqual([]);
   await page.getByRole('button',{name:'取消',exact:true}).click();await page.getByRole('button',{name:'编辑 GitHub',exact:true}).click();await page.getByLabel('所属文件夹',{exact:true}).selectOption('f0');
   snap=await (await context.request.get('/api/preferences')).json() as any;
-  expect((await context.request.put('/api/preferences',{headers:{Origin:'http://127.0.0.1:5173'},data:{version:snap.version,data:defaults}})).status()).toBe(200);await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await expect(page.locator('.folder-row-name')).toHaveCount(0);
+  expect((await context.request.put('/api/preferences',{headers:{Origin:'http://127.0.0.1:5173'},data:{schemaVersion:2,version:snap.version,data:defaults}})).status()).toBe(200);await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await expect(page.locator('.folder-row-name')).toHaveCount(0);
   await page.getByRole('button',{name:'保存捷径',exact:true}).click();await expect(page.getByText('已同步',{exact:true})).toBeVisible();expect(errors).toEqual([]);
   expect((await (await context.request.get('/api/preferences')).json() as any).data.shortcuts[0].folderId).toBe(null);await context.close();
 });

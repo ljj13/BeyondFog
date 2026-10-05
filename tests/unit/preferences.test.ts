@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { preferencesSchema, defaults, searchUrl, moveShortcut } from '../../src/shared/preferences';
 describe('preferences and search', () => {
+  it('defaults old folder icons to auto and preserves explicit choices', () => {
+    const old = { ...defaults, folders: [{ id: 'mail', name: '邮箱' }] };
+    expect(preferencesSchema.parse(old).folders[0]).toEqual({ id: 'mail', name: '邮箱', icon: 'auto' });
+    expect(preferencesSchema.parse({ ...old, folders: [{ ...old.folders[0], icon: 'heart' }] }).folders[0].icon).toBe('heart');
+    expect(() => preferencesSchema.parse({ ...old, folders: [{ ...old.folders[0], icon: 'untrusted' }] })).toThrow();
+  });
   it('upgrades old configurations without losing shortcuts or their order', () => {
     const legacy = { ...defaults, shortcuts: defaults.shortcuts.map(({folderId, ...site}) => site) } as Record<string, unknown>;
     delete legacy.shortcutLayout; delete legacy.folders;

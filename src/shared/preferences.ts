@@ -6,7 +6,9 @@ export const wallpapers = [
 ] as const;
 const file = z.string().min(1).max(255).refine(s => !/[/%\\\u0000-\u001f:#?]/.test(s) && s !== '.' && s !== '..');
 export const shortcutSchema = z.object({ id: z.string().min(1).max(64), title: z.string().trim().min(1).max(40), folderId: z.string().min(1).max(64).nullable().default(null), url: z.url().max(2048).refine(s => { const u = new URL(s); return ['http:', 'https:'].includes(u.protocol) && !u.username && !u.password; }) }).strict();
-export const folderSchema = z.object({id: z.string().min(1).max(64), name: z.string().trim().min(1).max(24)}).strict();
+export const folderIcons = ['auto','folder','mail','briefcase','book','shopping','play','tools','code','star','heart'] as const;
+export type FolderIconName = typeof folderIcons[number];
+export const folderSchema = z.object({id: z.string().min(1).max(64), name: z.string().trim().min(1).max(24), icon: z.enum(folderIcons).default('auto')}).strict();
 export const preferencesSchema = z.object({
   shortcutLayout: z.enum(['flat','folders']).default('flat'),
   folders: z.array(folderSchema).max(20).default([]),
@@ -21,7 +23,7 @@ export const preferencesSchema = z.object({
 });
 export type Preferences = z.infer<typeof preferencesSchema>;
 export type Shortcut = z.input<typeof shortcutSchema>;
-export type Folder = z.infer<typeof folderSchema>;
+export type Folder = z.input<typeof folderSchema>;
 export const defaults: Preferences = preferencesSchema.parse({ engine: 'google', newTab: true, wallpaper: {kind: 'builtin', id: 'alpine-mist'}, dim: 0.32, shortcuts: [
   {id: 'github', title: 'GitHub', url: 'https://github.com/'},
   {id: 'gmail', title: 'Gmail', url: 'https://mail.google.com/'},

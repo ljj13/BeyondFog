@@ -1,0 +1,9 @@
+# BeyondFog menus, folder icons and website presets
+
+Approved in chat 2026-10-05. Base59fc6e3; continue existing feat/beyondfog feature checkout. Execute inline with one fresh final review.
+
+1. Icon enum/default auto in folder JSON, PUT schemaVersion2 guard before parsing data, updated local API fixtures/legacy guards. Deploy existing UI compatibility bridge retaining icon metadata; record new rollback UUID. No D1 migration.
+2. Shared glass select for engine and folder filter/membership (icon/count,44px options, accessible keyboard, panel/viewport placement/scroll/zoom, draft preservation). Shared folder icon auto matching and11button choices in editor. Six-category19website catalog with checkbox import, atomic capacity check, preserve same-name folder manual icon, first same-name folder; official hostname catalog matching includingJDsubdomains. Existing unclassified matching sites move to category, existing grouped sites untouched, new sites append in catalog order; no mode switch. Gmail officialGoogle icon override; currentJD icon and fallback retained.
+3. Full type/unit/browser/build checks and fresh review; production deploy/live guest desktop/mobile plus actual new bridge rollback/static-client preservation and restore. Owner data untouched; free existing resources only. Record acceptance and versions in PROGRESS/DEPLOYMENT.
+
+Preset names/URLs are the approved chat table:邮箱 Gmail/Outlook/QQ/163;工作 GitHub/Cloudflare/Notion;学习 Wikipedia/MDN/icourse163;购物 JD/Taobao/Tmall;娱乐 Bilibili/YouTube/music163;工具 DeepL/panBaidu/docsQQ. Auto icons match邮箱邮件/工作办公/学习阅读/购物商城/娱乐视频/工具; remaining names plainfolder. Manual auto/folder/mail/briefcase/book/shopping/play/tools/code/star/heart. Initial catalog category邮箱, email items selected; cross-category selections persist. Only selected effective additions/group moves create folders, reject entire over-limit operation, duplicate import no-op.
