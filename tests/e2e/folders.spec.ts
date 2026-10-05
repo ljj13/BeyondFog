@@ -1,3 +1,4 @@
+import { chooseFolder } from './folder-helper';
 import { test, expect, type Page } from '@playwright/test';
 
 async function folder(page: Page, name: string) {
@@ -7,7 +8,7 @@ async function folder(page: Page, name: string) {
 }
 async function assign(page: Page, title: string, name: string) {
   await page.getByRole('button', { name: `编辑 ${title}`, exact: true }).click();
-  await page.getByLabel('所属文件夹', { exact: true }).selectOption({ label: name });
+  await chooseFolder(page,'所属文件夹',name);
   await page.getByRole('button', { name: '保存捷径', exact: true }).click();
 }
 async function setup(page: Page) {
@@ -72,7 +73,7 @@ test('touch folder toggles, outside dismissal and narrow viewport remain usable 
 test('folder and filtered website drag and button ordering preserve other groups', async ({ page }) => {
   await setup(page); await page.getByRole('button', { name: '整理捷径', exact: true }).click();
   await assign(page, '哔哩哔哩', '工作'); await assign(page, 'Cloudflare', '工作');
-  await page.getByLabel('查看文件夹', {exact:true}).selectOption({label:'工作'});
+  await chooseFolder(page,'查看文件夹','工作');
   await page.getByRole('button', { name: '上移 Cloudflare', exact:true }).click();
   let rows=page.locator('.shortcut-list .shortcut-row');
   await rows.filter({hasText:'GitHub'}).dragTo(rows.filter({hasText:'Cloudflare'}));
@@ -87,7 +88,7 @@ test('folder and filtered website drag and button ordering preserve other groups
   await page.getByRole('radio',{name:'文件夹模式',exact:true}).check(); await page.getByRole('button',{name:'关闭设置',exact:true}).click();
   await page.getByRole('button',{name:'文件夹 娱乐',exact:true}).click();
   await page.getByRole('region',{name:'娱乐中的网站'}).getByRole('button',{name:'添加网站',exact:true}).click();
-  await expect(page.getByLabel('所属文件夹',{exact:true})).toHaveValue(await page.getByLabel('所属文件夹',{exact:true}).locator('option').filter({hasText:'娱乐'}).getAttribute('value') as string);
+  await expect(page.getByRole('combobox',{name:'所属文件夹',exact:true})).toContainText('娱乐');
   await page.getByLabel('网站名称').fill('新网站'); await page.getByLabel('网站地址').fill('https://example.com/new'); await page.getByRole('button',{name:'保存捷径',exact:true}).click();
   await page.getByRole('button',{name:'关闭设置',exact:true}).click(); await expect(page.getByRole('button',{name:'文件夹 娱乐',exact:true})).toBeFocused(); await page.getByRole('button',{name:'文件夹 娱乐',exact:true}).click();
   await expect(page.getByRole('region',{name:'娱乐中的网站'}).getByRole('link',{name:'新网站',exact:true})).toHaveAttribute('href','https://example.com/new');

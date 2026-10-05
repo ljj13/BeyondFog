@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
-import { Folder, FolderOpen, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { ShortcutIcon } from './ShortcutIcon';
+import { FolderIcon } from './FolderIcon';
 import { moveShortcut, type Preferences } from './shared/preferences';
 
 export function FolderShortcuts({ data, edit, enabled, onAdd }: {
@@ -22,9 +23,9 @@ export function FolderShortcuts({ data, edit, enabled, onAdd }: {
     else { setClosing(true); fadeTimer.current = setTimeout(() => { setOpen(null); setClosing(false); setPosition(undefined); }, 120); }
   }, [clearTimers]);
   const show = (key: string) => { if (!enabled || drag) return; clearTimers(); if (key !== open) setPosition(undefined); setClosing(false); setOpen(key); };
-  const groups = data.folders.map(f => ({ key: `folder:${f.id}`, id: f.id as string | null, name: f.name, sites: data.shortcuts.filter(s => s.folderId === f.id) }));
+  const groups = data.folders.map(f => ({ key: `folder:${f.id}`, id: f.id as string | null, name: f.name, icon:f.icon, sites: data.shortcuts.filter(s => s.folderId === f.id) }));
   const unclassified = data.shortcuts.filter(s => s.folderId === null);
-  if (unclassified.length) groups.push({ key: 'unclassified', id: null, name: '未分类', sites: unclassified });
+  if (unclassified.length) groups.push({ key: 'unclassified', id: null, name: '未分类', icon:'folder', sites: unclassified });
   const selected = groups.find(g => g.key === open);
   useEffect(() => () => clearTimers(), [clearTimers]);
   useEffect(() => { if (!enabled || (open && !selected)) close(true); }, [enabled, open, Boolean(selected), close]);
@@ -73,7 +74,7 @@ export function FolderShortcuts({ data, edit, enabled, onAdd }: {
       onDrop={e => { e.preventDefault(); if (drag && g.id !== null) edit(d => ({ ...d, folders: moveShortcut(d.folders, d.folders.findIndex(f => f.id === drag), d.folders.findIndex(f => f.id === g.id)) })); setDrag(null); }}>
       <button ref={node => { if (node) buttons.current.set(g.key, node); else buttons.current.delete(g.key); }} className="folder-trigger shortcut-link" type="button" aria-label={`文件夹 ${g.name}`} aria-expanded={open === g.key && !closing} aria-controls={open === g.key ? 'folder-popup' : undefined}
         onClick={() => open === g.key && !closing ? close() : show(g.key)}>
-        <span className="shortcut-icon">{open === g.key && !closing ? <FolderOpen size={28} strokeWidth={1.5}/> : <Folder size={28} strokeWidth={1.5}/>}<span className="folder-count">{g.sites.length}</span></span><span>{g.name}</span>
+        <span className="shortcut-icon"><FolderIcon name={g.name} icon={g.icon} size={28}/><span className="folder-count">{g.sites.length}</span></span><span>{g.name}</span>
       </button>
       {open === g.key && <div ref={popup} id="folder-popup" role="region" aria-label={`${g.name}中的网站`} aria-hidden={closing || undefined} inert={closing} className={`folder-popup${closing ? ' is-closing' : ''}`} data-direction={position?.up ? 'up' : 'down'}
         style={{ left: position?.left ?? 0, top: position?.top ?? 0, width: position?.width ?? 360, maxHeight: position?.height ?? 320, visibility: position ? 'visible' : 'hidden', '--folder-shift': position?.up ? '-6px' : '6px' } as CSSProperties}>

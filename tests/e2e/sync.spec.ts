@@ -1,3 +1,4 @@
+import { chooseFolder } from './folder-helper';
 import { chooseEngine } from './engine-helper';
 import { test,expect,type BrowserContext,type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
@@ -98,7 +99,7 @@ test('folder preferences synchronize, conflicts retain local folders and logout 
   const a=await browser.newContext(),b=await browser.newContext(),pa=await a.newPage(),pb=await b.newPage(); await login(a,pa);await login(b,pb);
   await pa.getByRole('button',{name:'整理捷径',exact:true}).click();
   await pa.getByRole('button',{name:'新建文件夹',exact:true}).click();await pa.getByLabel('文件夹名称',{exact:true}).fill('私人工作');await pa.getByRole('button',{name:'保存文件夹',exact:true}).click();
-  await pa.getByRole('button',{name:'编辑 GitHub',exact:true}).click();await pa.getByLabel('所属文件夹',{exact:true}).selectOption({label:'私人工作'});await pa.getByRole('button',{name:'保存捷径',exact:true}).click();
+  await pa.getByRole('button',{name:'编辑 GitHub',exact:true}).click();await chooseFolder(pa,'所属文件夹','私人工作');await pa.getByRole('button',{name:'保存捷径',exact:true}).click();
   await pa.getByRole('radio',{name:'文件夹模式',exact:true}).check();await expect(pa.getByText('已同步',{exact:true})).toBeVisible();
   await pb.evaluate(()=>window.dispatchEvent(new Event('focus')));await expect(pb.getByRole('button',{name:'文件夹 私人工作',exact:true})).toBeVisible();
   await pb.getByRole('button',{name:'文件夹 私人工作',exact:true}).click();await expect(pb.getByRole('region',{name:'私人工作中的网站'}).getByRole('link',{name:'GitHub',exact:true})).toBeVisible();
@@ -137,9 +138,25 @@ test('an open editor handles capacity and deleted folder after a cloud refresh w
   const folders=Array.from({length:20},(_,i)=>({id:'f'+i,name:'远端 '+i}));
   expect((await context.request.put('/api/preferences',{headers:{Origin:'http://127.0.0.1:5173'},data:{schemaVersion:2,version:snap.version,data:{...defaults,folders}}})).status()).toBe(200);await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await expect(page.locator('.folder-row-name')).toHaveCount(20);
   await page.getByRole('button',{name:'保存文件夹',exact:true}).click();await expect(page.getByRole('alert')).toContainText('最多 20');expect(errors).toEqual([]);
-  await page.getByRole('button',{name:'取消',exact:true}).click();await page.getByRole('button',{name:'编辑 GitHub',exact:true}).click();await page.getByLabel('所属文件夹',{exact:true}).selectOption('f0');
+  await page.getByRole('button',{name:'取消',exact:true}).click();await page.getByRole('button',{name:'编辑 GitHub',exact:true}).click();await chooseFolder(page,'所属文件夹','远端 0');
   snap=await (await context.request.get('/api/preferences')).json() as any;
   expect((await context.request.put('/api/preferences',{headers:{Origin:'http://127.0.0.1:5173'},data:{schemaVersion:2,version:snap.version,data:defaults}})).status()).toBe(200);await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await expect(page.locator('.folder-row-name')).toHaveCount(0);
   await page.getByRole('button',{name:'保存捷径',exact:true}).click();await expect(page.getByText('已同步',{exact:true})).toBeVisible();expect(errors).toEqual([]);
   expect((await (await context.request.get('/api/preferences')).json() as any).data.shortcuts[0].folderId).toBe(null);await context.close();
+});
+
+test('preset folders and manual icons synchronize and survive website edits and explicit cloud reload',async({browser})=>{
+  const a=await browser.newContext(),b=await browser.newContext(),pa=await a.newPage(),pb=await b.newPage();await login(a,pa);await login(b,pb);
+  await pa.getByRole('button',{name:'整理捷径',exact:true}).click();await pa.getByRole('button',{name:'添加常用网站',exact:true}).click();await pa.getByRole('button',{name:'添加所选',exact:true}).click();await expect(pa.getByText('已同步',{exact:true})).toBeVisible();
+  await pa.getByRole('button',{name:'重命名文件夹 邮箱',exact:true}).click();await pa.getByRole('button',{name:'文件夹图标 爱心',exact:true}).click();await pa.getByRole('button',{name:'保存文件夹',exact:true}).click();await pa.getByRole('radio',{name:'文件夹模式',exact:true}).check();await expect(pa.getByText('已同步',{exact:true})).toBeVisible();
+  await pb.evaluate(()=>window.dispatchEvent(new Event('focus')));const folder=pb.getByRole('button',{name:'文件夹 邮箱',exact:true});await expect(folder).toBeVisible();await expect(folder.locator('svg')).toHaveAttribute('data-folder-icon','heart');await folder.click();await expect(pb.getByRole('region',{name:'邮箱中的网站'}).getByRole('link',{name:'Outlook',exact:true})).toBeVisible();
+  await pb.getByRole('button',{name:'整理捷径',exact:true}).click();await pb.getByRole('button',{name:'编辑 Gmail',exact:true}).click();await pb.getByLabel('网站名称').fill('私人 Gmail');await pb.getByRole('button',{name:'保存捷径',exact:true}).click();await expect(pb.getByText('已同步',{exact:true})).toBeVisible();
+  await pa.evaluate(()=>window.dispatchEvent(new Event('focus')));await expect(pa.getByRole('button',{name:'编辑 私人 Gmail',exact:true})).toBeVisible();const snap=await(await a.request.get('/api/preferences')).json() as any;expect(snap.data.folders[0]).toMatchObject({name:'邮箱',icon:'heart'});expect(snap.data.shortcuts.filter((s:any)=>s.folderId===snap.data.folders[0].id)).toHaveLength(4);
+  let release!:()=>void,arrived!:()=>void;const barrier=new Promise<void>(r=>release=r),waiting=new Promise<void>(r=>arrived=r);
+  await pa.route('**/api/preferences',async r=>{if(r.request().method()==='PUT'){arrived();await barrier;}await r.continue();});
+  await pa.getByRole('button',{name:'重命名文件夹 邮箱',exact:true}).click();await pa.getByRole('button',{name:'文件夹图标 星标',exact:true}).click();await pa.getByRole('button',{name:'保存文件夹',exact:true}).click();await waiting;
+  await pb.getByRole('button',{name:'重命名文件夹 邮箱',exact:true}).click();await pb.getByRole('button',{name:'文件夹图标 书本',exact:true}).click();await pb.getByRole('button',{name:'保存文件夹',exact:true}).click();await expect(pb.getByText('已同步',{exact:true})).toBeVisible();release();
+  await expect(pa.getByText('同步冲突',{exact:true})).toBeVisible();await expect(pa.locator('.folder-settings-list .mini-icon svg').first()).toHaveAttribute('data-folder-icon','star');
+  await pa.getByRole('button',{name:'加载云端（放弃本地编辑）',exact:true}).click();await expect(pa.locator('.folder-settings-list .mini-icon svg').first()).toHaveAttribute('data-folder-icon','book');
+  await a.close();await b.close();
 });
