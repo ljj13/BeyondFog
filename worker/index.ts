@@ -52,7 +52,8 @@ export class BeyondFogService extends DurableObject<Env> {
         if (request.method === 'GET') return json(await this.preferences(owner));
         if (request.method === 'PUT') {
           const raw = await readJson(request);
-          const input = z.object({version: z.number().int().nonnegative(), data: preferencesSchema}).strict().parse(raw);
+          if (raw === null || typeof raw !== 'object' || (raw as {schemaVersion?:unknown}).schemaVersion !== 2) throw new Problem(409,'页面版本已更新，请刷新页面后继续保存；已有图标和分组未被修改。');
+          const input = z.object({schemaVersion:z.literal(2),version: z.number().int().nonnegative(), data: preferencesSchema}).strict().parse(raw);
           const source = (raw as {data:Record<string,unknown>}).data;
           if(!Object.hasOwn(source,'shortcutLayout')||!Object.hasOwn(source,'folders'))throw new Problem(409,'页面版本已更新，请刷新页面后继续保存；已有分组未被修改。');
           const result = await this.env.DB.prepare('UPDATE preferences SET data=?,version=version+1,updatedAt=? WHERE owner=? AND version=?').bind(JSON.stringify(input.data), new Date().toISOString(), owner, input.version).run();

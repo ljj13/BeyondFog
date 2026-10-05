@@ -45,7 +45,7 @@ export function usePreferences() {
     const gen=generation.current, sentSeq=seq.current, sent=current.current;
     busy.current=true;setStatus('正在保存');
     try {
-      const snap=await api<Snapshot>('/api/preferences','PUT',{version:revision.current,data:sent});
+      const snap=await api<Snapshot>('/api/preferences','PUT',{schemaVersion:2,version:revision.current,data:sent});
       if(gen!==generation.current)return;
       revision.current=snap.version;
       if(seq.current===sentSeq) {dirty.current=false;setStatus('已同步');setMessage('');}
