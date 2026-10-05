@@ -51,7 +51,10 @@ export class BeyondFogService extends DurableObject<Env> {
         await this.env.DB.prepare('INSERT OR IGNORE INTO preferences(owner,version,data,updatedAt) VALUES (?,0,?,?)').bind(owner,JSON.stringify(defaults),new Date().toISOString()).run();
         if (request.method === 'GET') return json(await this.preferences(owner));
         if (request.method === 'PUT') {
-          const input = z.object({version: z.number().int().nonnegative(), data: preferencesSchema}).strict().parse(await readJson(request));
+          const raw = await readJson(request);
+          const input = z.object({version: z.number().int().nonnegative(), data: preferencesSchema}).strict().parse(raw);
+          const source = (raw as {data:Record<string,unknown>}).data;
+          if(!Object.hasOwn(source,'shortcutLayout')||!Object.hasOwn(source,'folders'))throw new Problem(409,'页面版本已更新，请刷新页面后继续保存；已有分组未被修改。');
           const result = await this.env.DB.prepare('UPDATE preferences SET data=?,version=version+1,updatedAt=? WHERE owner=? AND version=?').bind(JSON.stringify(input.data), new Date().toISOString(), owner, input.version).run();
           if (!result.meta.changes) return json({error: '另一台设备已修改设置，本地编辑仍被保留。', current: await this.preferences(owner)},409);
           return json({version: input.version+1, data: input.data});

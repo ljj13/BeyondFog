@@ -87,6 +87,7 @@ Production smoke passed HTTPS/document headers, static resources/account isolati
 
 ## JD declared tab icon correction — 2026-10-05
 
+
 User reported missing JD icon and supplied the exact saved URL https://home.jd.com/. User then clarified the desired icon is the website's dog favicon, not the legacy JD letters. Direct inspection reproduced bare jd.com root redirecting to HTML, home.jd.com/favicon.ico returning 200 text/html, www.jd.com/favicon.ico returning the old letter icon. Official www.jd.com HTML declares https://storage.360buyimg.com/retail-mall/mall-common-component/favicon.ico (200 ICO, 96x96), hosted by JD itself. Previous acceptance covered only www.jd.com and did not establish the user's home.jd.com URL or current tab artwork. New home.jd.com regression observed RED.
 
 User steering updates icon source requirement for JD: exact jd.com and its subdomains use the official HTML-declared CDN image directly; other websites keep the existing root-file behavior. No third-party favicon service, page scraping at runtime, proxy, domain-parent guessing, or saved URL change. HTTP fallback remains as approved. Add regressions for home/bare/www JD, CDN errors and unrelated lookalike hostname isolation; verify the actual dog artwork live after tests.
@@ -94,3 +95,7 @@ User steering updates icon source requirement for JD: exact jd.com and its subdo
 JD correction local verification: npm test 49/49, build/typecheck passed, full browser suite 29/29 (1.6m). A prior focused run was invalidated when the local simulator exited during a concurrent build (connection reset/refused); rerunning on a persistent dev server with no concurrent build completed all29 tests. Actual official CDN ICO rendered and visually inspected as white dog,96x96; artifact .artifacts/jd-declared-tab-icon.png. Fresh reviewer jd_icon_review reported no Critical/Important/Minor findings; live production checks follow.
 
 JD correction complete — deployed b36589a4-e89b-48f9-b760-8df20c86f7f5 at 2026-10-05T10:41:51Z (18:41:51 Singapore). Live production browser without image mocks verified exact https://home.jd.com/ navigation unchanged, actual96x96 dog image loaded in homepage/settings at desktop1440x960 and touch390x844; desktop edits also verified bare/main/home JD addresses. Zero page errors and horizontal overflow. Actual home-JD tile visually inspected in .artifacts/production-jd-dog-desktop-tile.png; mobile/settings/full screenshots retained. All acceptance used guests without modifying owner preferences. Production smoke and deployment-list checks passed; previous88826713-aa28-45ca-a3cc-0be560478f18 retained for rollback. No deferred review findings; user-reported exact URL and desired artwork now verified.
+
+## Folder mode — plan: docs/FOLDERS-PLAN.md
+BASE afe8c9d; existing feature checkout retained. Task1 schema tests RED (missing defaults/new fields). New JSON fields normalize old rows on read; PUT requires explicit layout/folders to fence old pages. No D1 migration.
+Task1 GREEN:51unit tests,29existing browser tests, build/typecheck passed. Compatible flat bridge retains all new JSON metadata through its existing spread-based editing flow.
