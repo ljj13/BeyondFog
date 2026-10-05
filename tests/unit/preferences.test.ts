@@ -1,6 +1,22 @@
 import { describe, it, expect } from 'vitest';
 import { preferencesSchema, defaults, searchUrl, moveShortcut } from '../../src/shared/preferences';
 describe('preferences and search', () => {
+  it('upgrades old configurations without losing shortcuts or their order', () => {
+    const legacy = { ...defaults } as Record<string, unknown>;
+    delete legacy.shortcutLayout; delete legacy.folders;
+    const upgraded = preferencesSchema.parse(legacy);
+    expect(upgraded).toMatchObject({ shortcutLayout: 'flat', folders: [] });
+    expect(upgraded.shortcuts.map(s => s.id)).toEqual(defaults.shortcuts.map(s => s.id));
+    expect(upgraded.shortcuts.every(s => s.folderId === null)).toBe(true);
+  });
+  it('accepts folders and memberships but rejects dangling IDs, duplicates and over-capacity', () => {
+    const data = { ...defaults, shortcutLayout: 'folders', folders: [{ id: 'work', name: '工作' }],
+      shortcuts: [{ ...defaults.shortcuts[0], folderId: 'work' }] };
+    expect(preferencesSchema.parse(data)).toMatchObject({ shortcutLayout: 'folders', folders: [{ id: 'work', name: '工作' }] });
+    expect(() => preferencesSchema.parse({ ...data, shortcuts: [{ ...data.shortcuts[0], folderId: 'missing' }] })).toThrow();
+    expect(() => preferencesSchema.parse({ ...data, folders: [data.folders[0], data.folders[0]] })).toThrow();
+    expect(() => preferencesSchema.parse({ ...data, folders: Array.from({ length: 21 }, (_, i) => ({ id: String(i), name: String(i) })) })).toThrow();
+  });
   it('starts with Google and licensed builtin wallpaper', () => {
     expect(defaults.engine).toBe('google');
     expect(preferencesSchema.parse(defaults).wallpaper.kind).toBe('builtin');

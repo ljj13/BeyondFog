@@ -24,6 +24,10 @@ test('two sessions perform atomic version saves and logout invalidates access',a
   expect([one.status(),two.status()].sort()).toEqual([200,409]);
   const winner=await (await a.get('/api/preferences')).json() as any;
   expect(winner.version).toBe(state.version+1);
+  const legacy={...defaults} as Record<string,unknown>;delete legacy.shortcutLayout;delete legacy.folders;
+  const rejected=await a.put('/api/preferences',{data:{version:winner.version,data:legacy}});
+  expect(rejected.status()).toBe(409);expect((await rejected.json()).error).toContain('刷新');
+  expect((await (await a.get('/api/preferences')).json()).version).toBe(winner.version);
   expect((await a.put('/api/preferences',{data:{version:winner.version,data:defaults}})).status()).toBe(200);
   const config=await (await a.get('/api/webdav/connection')).json() as any;
   expect((await a.put('/api/webdav/connection',{data:{version:config.version,endpoint:'https://dav.jianguoyun.com/dav/',username:'test@example.com',password:'not-real-secret',directory:'BeyondFog/wallpapers'}})).status()).toBe(200);
