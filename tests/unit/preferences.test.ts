@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { preferencesSchema, defaults, searchUrl, moveShortcut } from '../../src/shared/preferences';
 describe('preferences and search', () => {
   it('upgrades old configurations without losing shortcuts or their order', () => {
-    const legacy = { ...defaults } as Record<string, unknown>;
+    const legacy = { ...defaults, shortcuts: defaults.shortcuts.map(({folderId, ...site}) => site) } as Record<string, unknown>;
     delete legacy.shortcutLayout; delete legacy.folders;
     const upgraded = preferencesSchema.parse(legacy);
     expect(upgraded).toMatchObject({ shortcutLayout: 'flat', folders: [] });
