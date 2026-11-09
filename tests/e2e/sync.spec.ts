@@ -160,3 +160,32 @@ test('preset folders and manual icons synchronize and survive website edits and 
   await pa.getByRole('button',{name:'加载云端（放弃本地编辑）',exact:true}).click();await expect(pa.locator('.folder-settings-list .mini-icon svg').first()).toHaveAttribute('data-folder-icon','book');
   await a.close();await b.close();
 });
+test('a failed preference load keeps the account visible and recovers through its own retry',async({browser})=>{
+  const context=await browser.newContext(),page=await context.newPage();
+  await context.setExtraHTTPHeaders({'cf-connecting-ip':'test-'+randomUUID()});
+  expect((await context.request.post('/api/auth/sign-in/email',{headers:{Origin:'http://127.0.0.1:5173'},data:{email:'owner@example.com',password:'BeyondFog-test-password-2026'}})).status()).toBe(200);
+  const snap=await (await context.request.get('/api/preferences')).json() as any;
+  const seeded={...snap.data,shortcuts:[{id:randomUUID(),title:'断网恢复捷径',url:'https://example.com/recovered',folderId:null},...snap.data.shortcuts]};
+  expect((await context.request.put('/api/preferences',{headers:{Origin:'http://127.0.0.1:5173'},data:{schemaVersion:2,version:snap.version,data:seeded}})).status()).toBe(200);
+  let failed=false,puts=0;
+  await page.route('**/api/preferences',async route=>{
+    if(route.request().method()==='PUT'){puts++;await route.continue();return;}
+    if(!failed){failed=true;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'服务暂时不可用'})});}
+    else await route.continue();
+  });
+  await page.goto('/');
+  // A failed snapshot must never look like a logout: the account stays visible and the failure is explained.
+  await expect(page.getByRole('button',{name:'我的空间'})).toBeVisible();
+  await expect(page.getByText('暂时无法加载云端设置')).toBeVisible();
+  await expect(page.getByRole('button',{name:'登录',exact:true})).toHaveCount(0);
+  // Without a snapshot there is no version to save against, so the edit stays local instead of forcing a conflict.
+  await chooseEngine(page,'搜索引擎','百度');
+  await page.waitForTimeout(700);
+  expect(puts).toBe(0);
+  // The page retries on its own and replaces the defaults with the saved settings.
+  await expect(page.getByRole('link',{name:'断网恢复捷径',exact:true})).toBeVisible({timeout:15000});
+  await expect(page.getByText('暂时无法加载云端设置')).toHaveCount(0);
+  const restored=await(await context.request.get('/api/preferences')).json() as any;
+  await context.request.put('/api/preferences',{headers:{Origin:'http://127.0.0.1:5173'},data:{schemaVersion:2,version:restored.version,data:defaults}});
+  await context.close();
+});

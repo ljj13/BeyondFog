@@ -29,6 +29,14 @@ export default function App() {
   // Reset the failure notice only when the chosen image actually changes, not on every preference reload.
   const wallpaperKey=data.wallpaper.kind==='webdav'?`webdav:${data.wallpaper.file}`:`builtin:${data.wallpaper.id}`;
   useEffect(()=>{setWallpaperError(false);},[wallpaperKey,imageAttempt]);
+  const [loadAttempt,setLoadAttempt]=useState(0);
+  // A cold Durable Object or a dropped request usually recovers on its own; retry twice before asking.
+  useEffect(()=>{
+    if(model.status!=='连接失败') {if(loadAttempt)setLoadAttempt(0);return;}
+    if(loadAttempt>=2)return;
+    const t=setTimeout(()=>{setLoadAttempt(v=>v+1);model.reload();},1200*(loadAttempt+1));
+    return()=>clearTimeout(t);
+  },[model.status,model.reload,loadAttempt]);
   const closePanel=useCallback(()=>{setPanel(false);setShortcut(undefined);setInitialFolder(null);},[]);
   const closeAuth=useCallback(()=>{setAuth(false);setChange(false);if(token)consumeToken();},[token,consumeToken]);
   function openAuth(changePassword=false) {setPanel(false);setChange(changePassword);setAuth(true);}
@@ -41,6 +49,7 @@ export default function App() {
     <form className="search-form" role="search" onSubmit={e=>{e.preventDefault();if(!query.trim())return;const url=searchUrl(data.engine,query.trim());if(data.newTab)window.open(url,'_blank','noopener,noreferrer');else location.assign(url);}}><div className="engine-wrap"><EnginePicker label="搜索引擎" variant="search" value={data.engine} onChange={engine=>edit(d=>({...d,engine}))}/></div><span className="search-divider"/><Search className="search-symbol" size={19}/><input type="search" aria-label="搜索内容" placeholder="想发现些什么？" autoComplete="off" value={query} onChange={e=>setQuery(e.target.value)}/><button type="submit" className="search-submit" aria-label="开始搜索"><ArrowRight size={21}/></button></form>
     <section className="shortcuts" aria-label="常用网站"><>{data.shortcutLayout==='folders'?<FolderShortcuts key={user?.id??'visitor'} data={data} edit={edit} enabled={!panel&&!auth} onAdd={(id,folderOnly)=>{setInitialFolder(id);setShortcut(folderOnly?'new-folder':'new');setPanel(true);}}/>:<div className="shortcut-grid">{data.shortcuts.map((s,i)=>{return <div key={s.id} className="shortcut-item" draggable onDragStart={()=>setDrag(i)} onDragEnd={()=>setDrag(null)} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();if(drag!==null)edit(d=>({...d,shortcuts:moveShortcut(d.shortcuts,drag,i)}));setDrag(null);}}><a className="shortcut-link" href={s.url} target="_blank" rel="noreferrer"><span className="shortcut-icon"><ShortcutIcon url={s.url} title={s.title}/></span><span>{s.title}</span></a><button className="shortcut-edit" aria-label={`编辑捷径 ${s.title}`} onClick={()=>{setShortcut(s.id);setPanel(true);}}><Pencil size={12}/></button></div>;})}<button className="add-shortcut" aria-label="添加捷径" disabled={data.shortcuts.length>=100} title={data.shortcuts.length>=100?"捷径已满（最多 100 个）":undefined} onClick={()=>{setInitialFolder(null);setShortcut('new');setPanel(true);}}><span className="shortcut-icon"><Plus size={24} strokeWidth={1.5}/></span><span>添加捷径</span></button></div>}</><button className="manage-shortcuts" onClick={()=>{setShortcut('manage');setPanel(true);}}>整理捷径</button></section>
     {wallpaperError&&<div className="wallpaper-notice" role="status">网盘壁纸暂不可用，已显示默认风景。<button onClick={()=>setImageAttempt(v=>v+1)}><RefreshCw size={13}/>重试</button></div>}
+    {model.status==='连接失败'&&<div className="wallpaper-notice" role="status">{user?'暂时无法加载云端设置，正在显示默认内容。':'暂时无法连接账号服务，正在重试。'}<button onClick={()=>model.reload()}><RefreshCw size={13}/>重试</button></div>}
     {model.conflict&&<button className="wallpaper-notice" onClick={()=>setPanel(true)}>设置同步冲突 · 本地编辑已保留，打开设置处理</button>}
     </main><footer className="home-footer"><span className="home-motto">BEYOND THE FOG, MORE TO DISCOVER.</span><a className="photo-credit" href={selected?.source??wallpapers[0].source} target="_blank" rel="noreferrer">{data.wallpaper.kind==='webdav'&&!wallpaperError&&user?'你的私人壁纸':`摄影 / ${selected?.author??wallpapers[0].author}`}<span>↗</span></a></footer>
     {panel&&<Settings model={model} onClose={closePanel} onAuth={()=>openAuth()} onChangePassword={()=>openAuth(true)} initialShortcut={shortcut} initialFolder={initialFolder}/>}

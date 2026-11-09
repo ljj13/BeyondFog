@@ -12,10 +12,10 @@ export function usePreferences() {
   const [loggingOut,setLoggingOut]=useState(false);
   const [blockedState,setBlockedState]=useState(false);
   const refresh=useRef(0),exiting=useRef(false);
-  const current=useRef(data), actor=useRef<User|null>(null), revision=useRef(0), generation=useRef(0), seq=useRef(0), dirty=useRef(false), busy=useRef(false), blocked=useRef(false), saving=useRef<Promise<void>|null>(null);
+  const current=useRef(data), actor=useRef<User|null>(null), revision=useRef(0), generation=useRef(0), seq=useRef(0), dirty=useRef(false), busy=useRef(false), blocked=useRef(false), synced=useRef(false), saving=useRef<Promise<void>|null>(null);
   const markBlocked=useCallback((value:boolean)=>{blocked.current=value;setBlockedState(value);},[]);
   const clear=useCallback(()=>{
-    generation.current++;refresh.current++;actor.current=null;setUser(null);dirty.current=false;markBlocked(false);setConflict(false);
+    generation.current++;refresh.current++;actor.current=null;setUser(null);dirty.current=false;synced.current=false;markBlocked(false);setConflict(false);
     current.current=structuredClone(defaults);setData(current.current);revision.current=0;setStatus('访客模式');
   },[markBlocked]);
   const load=useCallback(async(force=false)=>{
@@ -27,6 +27,8 @@ export function usePreferences() {
       const session=await api<{user:User}|null>('/api/auth/get-session');
       if(gen!==generation.current||requestId!==refresh.current) return;
       if(!session?.user) {if(actor.current) {clear();setMessage('会话已结束，私人内容已清除');}else setStatus('访客模式');return;}
+      // Adopt the identity before the snapshot: a failed snapshot must never look like a logout.
+      actor.current=session.user;setUser(session.user);
       const snap=await api<Snapshot>('/api/preferences');
       if(gen!==generation.current||requestId!==refresh.current||snap.version<revision.current) return;
       // Explicit reload discards only edits that existed when it began; subsequent edits survive.
@@ -36,16 +38,18 @@ export function usePreferences() {
         if(snap.version!==revision.current) {markBlocked(true);setConflict(true);setStatus('同步冲突');setMessage('其他设备有新设置，本地编辑已保留。');}
         return;
       }
-      actor.current=session.user;setUser(session.user);revision.current=snap.version;
+      revision.current=snap.version;synced.current=true;
       current.current=preferencesSchema.parse(snap.data);setData(current.current);dirty.current=false;markBlocked(false);setConflict(false);setStatus('已同步');setMessage(snap.recovered?'云端设置无法读取，已载入默认值；保存一次即可覆盖。':'');
     } catch(e) {
       if(gen!==generation.current||requestId!==refresh.current)return;
       if(e instanceof ApiError&&e.status===401) {clear();return;}
-      setStatus('连接失败');setMessage((e as Error).message||'无法连接账号服务');
+      const detail=(e as Error).message||'无法连接账号服务';
+      setStatus('连接失败');setMessage(actor.current?`无法加载云端设置，正在显示默认内容。${detail}`:detail);
     }
   },[clear,markBlocked]);
   const flush=useCallback(async():Promise<void>=>{
-    if(!actor.current||!dirty.current||busy.current||blocked.current)return;
+    // Nothing is writable before the first snapshot: a save without its version would only produce a conflict.
+    if(!actor.current||!synced.current||!dirty.current||busy.current||blocked.current)return;
     const gen=generation.current, sentSeq=seq.current, sent=current.current;
     busy.current=true;setStatus('正在保存');
     try {
@@ -67,9 +71,10 @@ export function usePreferences() {
   const edit=useCallback((fn:(old:Preferences)=>Preferences)=>{
     if(exiting.current)return;
     const next=fn(current.current);if(next===current.current)return;
-    current.current=preferencesSchema.parse(next);seq.current++;dirty.current=Boolean(actor.current);setData(current.current);
-    // A failed or conflicting save keeps its own status and retry button until the owner resolves it.
-    if(!blocked.current)setStatus(actor.current?'等待保存':'访客模式');
+    current.current=preferencesSchema.parse(next);seq.current++;dirty.current=Boolean(actor.current)&&synced.current;setData(current.current);
+    // A failed or conflicting save keeps its own status and retry button until the owner resolves it,
+    // and an unloaded snapshot keeps the connection notice instead of claiming the edit is being saved.
+    if(!blocked.current&&synced.current)setStatus(actor.current?'等待保存':'访客模式');
   },[]);
   const login=useCallback(async()=>{generation.current++;dirty.current=false;markBlocked(false);await load(true);},[load,markBlocked]);
   const logout=useCallback(async(discard=false)=>{
@@ -84,5 +89,6 @@ export function usePreferences() {
     finally {exiting.current=false;setLoggingOut(false);}
   },[clear,flush]);
   const retry=useCallback(()=>{markBlocked(false);if(!busy.current)saving.current=flush();},[flush,markBlocked]);
-  return {data,user,status,message,conflict,blocked:blockedState,loggingOut,edit,login,logout,reload:()=>load(true),retry,notify:setMessage};
+  const reload=useCallback(()=>{void load(true);},[load]);
+  return {data,user,status,message,conflict,blocked:blockedState,loggingOut,edit,login,logout,reload,retry,notify:setMessage};
 }
