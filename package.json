@@ -3,6 +3,9 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
@@ -19,7 +22,6 @@
   "dependencies": {
     "better-auth": "1.7.7",
     "fast-xml-parser": "5.11.2",
-    "hono": "4.13.13",
     "lucide-react": "1.52.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",

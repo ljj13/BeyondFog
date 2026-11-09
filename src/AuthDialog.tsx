@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ArrowRight,LockKeyhole } from 'lucide-react';
 import { Modal } from './Modal';
 import { api } from './api';
-export function AuthDialog({onClose,onLogin,token,change=false}:{onClose:()=>void;onLogin:()=>Promise<void>;token?:string;change?:boolean}) {
+export function AuthDialog({onClose,onLogin,token,onTokenUsed,change=false}:{onClose:()=>void;onLogin:()=>Promise<void>;token?:string;onTokenUsed?:()=>void;change?:boolean}) {
   const [mode,setMode]=useState<'login'|'forgot'|'reset'|'change'>(token?'reset':change?'change':'login');
   const [email,setEmail]=useState(''),[password,setPassword]=useState(''),[current,setCurrent]=useState(''),[confirm,setConfirm]=useState(''),[error,setError]=useState(''),[success,setSuccess]=useState(''),[busy,setBusy]=useState(false);
   const title={login:'回到你的空间',forgot:'找回密码',reset:'设置新密码',change:'修改密码'}[mode];
@@ -13,7 +13,7 @@ export function AuthDialog({onClose,onLogin,token,change=false}:{onClose:()=>voi
       else if(mode==='forgot') {await api('/api/auth/request-password-reset','POST',{email,redirectTo:location.origin});setSuccess('如果邮箱与账号匹配，重置邮件将发送到已验证邮箱。链接在 30 分钟后失效。');}
       else {
         if(password!==confirm)throw new Error('两次密码不一致');
-        if(mode==='reset') {await api('/api/auth/reset-password','POST',{token,newPassword:password});history.replaceState(null,'','/');}
+        if(mode==='reset') {await api('/api/auth/reset-password','POST',{token,newPassword:password});onTokenUsed?.();}
         else await api('/api/auth/change-password','POST',{currentPassword:current,newPassword:password,revokeOtherSessions:true});
         setPassword('');setCurrent('');setConfirm('');setSuccess('密码已更新，请使用新密码登录。');if(mode==='change')await api('/api/auth/sign-out','POST',{});await onLogin();setMode('login');
       }

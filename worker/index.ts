@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createAuth } from './auth';
 import { defaults, preferencesSchema } from '../src/shared/preferences';
 import { webdavApi } from './webdav';
+import { applySecurityHeaders } from './headers';
 import { json, Problem, readJson, type Env } from './types';
 
 export class BeyondFogService extends DurableObject<Env> {
@@ -31,13 +32,16 @@ export class BeyondFogService extends DurableObject<Env> {
         this.limit(`auth:${id}`, 60, 60);
         if (path === '/api/auth/sign-in/email') this.limit(`login:${id}`, 8, 300);
         if (path === '/api/auth/request-password-reset') {
-          this.limit(`reset:${id}`, 3, 900); this.limit('reset:global', 10, 3600);
+          this.limit(`reset:${id}`, 3, 900);
           if (!this.env.EMAIL) throw new Problem(503, '密码重置邮件尚未配置，请联系管理员');
         }
         // Expose only the required auth endpoints; account mutation and signup remain closed.
         if (!['/api/auth/sign-in/email','/api/auth/sign-out','/api/auth/get-session','/api/auth/change-password','/api/auth/request-password-reset','/api/auth/reset-password'].includes(path)) throw new Problem(403, '此认证功能未开放');
         if(request.method === 'POST') {
           const input=await readJson(request);
+          // Shared mailbox budget counts only attempts on the owner address, so unrelated floods cannot lock out recovery.
+          const email=(input as {email?:unknown}|null)?.email;
+          if(path==='/api/auth/request-password-reset'&&typeof email==='string'&&email.toLowerCase()===this.env.OWNER_EMAIL.toLowerCase()) this.limit('reset:global', 10, 3600);
           const headers=new Headers(request.headers);headers.delete('Content-Length');
           request=new Request(request.url,{method:'POST',headers,body:JSON.stringify(input)});
         }
@@ -48,14 +52,15 @@ export class BeyondFogService extends DurableObject<Env> {
       const owner = session.user.id;
       this.limit(`private:${owner}`, 180, 60);
       if (path === '/api/preferences') {
-        await this.env.DB.prepare('INSERT OR IGNORE INTO preferences(owner,version,data,updatedAt) VALUES (?,0,?,?)').bind(owner,JSON.stringify(defaults),new Date().toISOString()).run();
         if (request.method === 'GET') return json(await this.preferences(owner));
         if (request.method === 'PUT') {
-          const raw = await readJson(request);
+          const raw = await readJson(request, 262144);
           if (raw === null || typeof raw !== 'object' || (raw as {schemaVersion?:unknown}).schemaVersion !== 2) throw new Problem(409,'页面版本已更新，请刷新页面后继续保存；已有图标和分组未被修改。');
           const input = z.object({schemaVersion:z.literal(2),version: z.number().int().nonnegative(), data: preferencesSchema}).strict().parse(raw);
           const source = (raw as {data:Record<string,unknown>}).data;
           if(!Object.hasOwn(source,'shortcutLayout')||!Object.hasOwn(source,'folders'))throw new Problem(409,'页面版本已更新，请刷新页面后继续保存；已有分组未被修改。');
+          // Created on first save only: a read must never consume the daily D1 write budget.
+          await this.env.DB.prepare('INSERT OR IGNORE INTO preferences(owner,version,data,updatedAt) VALUES (?,0,?,?)').bind(owner,JSON.stringify(defaults),new Date().toISOString()).run();
           const result = await this.env.DB.prepare('UPDATE preferences SET data=?,version=version+1,updatedAt=? WHERE owner=? AND version=?').bind(JSON.stringify(input.data), new Date().toISOString(), owner, input.version).run();
           if (!result.meta.changes) return json({error: '另一台设备已修改设置，本地编辑仍被保留。', current: await this.preferences(owner)},409);
           return json({version: input.version+1, data: input.data});
@@ -77,7 +82,14 @@ export class BeyondFogService extends DurableObject<Env> {
   }
   private async preferences(owner: string) {
     const row = await this.env.DB.prepare('SELECT version,data FROM preferences WHERE owner=?').bind(owner).first<{version:number;data:string}>();
-    return {version: row!.version, data: preferencesSchema.parse(JSON.parse(row!.data))};
+    if (!row) return {version: 0, data: defaults};
+    try {
+      const parsed = preferencesSchema.safeParse(JSON.parse(row.data));
+      if (parsed.success) return {version: row.version, data: parsed.data};
+    } catch { /* Unparsable JSON uses the same recovery path. */ }
+    // Rollbacks and future schemas must never leave the owner with a permanently unsavable account.
+    console.error('BeyondFog preferences unreadable', {version: row.version});
+    return {version: row.version, data: defaults, recovered: true};
   }
 }
 export default {
@@ -89,14 +101,8 @@ export default {
       catch { response = json({error: '服务暂时不可用或免费额度已耗尽，请稍后重试'},503); }
     } else response = await env.ASSETS.fetch(request);
     const result = new Response(response.body, response);
-    result.headers.set('X-Content-Type-Options', 'nosniff');
-    result.headers.set('Referrer-Policy','no-referrer');
-    result.headers.set('X-Frame-Options','DENY');
-    result.headers.set('Permissions-Policy','camera=(), microphone=(), geolocation=()');
-    if (url.protocol === 'https:') result.headers.set('Strict-Transport-Security','max-age=31536000');
+    applySecurityHeaders(result.headers, url.protocol === 'https:');
     if (url.pathname.startsWith('/api/')) result.headers.set('Cache-Control','no-store, private');
-    // Vite HMR needs ws/eval in development only.
-    if (url.protocol === 'https:') result.headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: https:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'");
     return result;
   },
 } satisfies ExportedHandler<Env>;

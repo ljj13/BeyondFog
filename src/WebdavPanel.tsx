@@ -11,8 +11,10 @@ export function WebdavPanel({selected,onSelect,onExpired}:{selected?:string;onSe
     if(alive.current){setFiles(value.files);if(value.message)setNotice(value.message);}
   }
   async function act(fn:(signal:AbortSignal)=>Promise<void>) {
+    // A newer action supersedes whatever is still in flight instead of racing it.
+    controller.current?.abort();
     const c=new AbortController();controller.current=c;setBusy(true);setError('');setNotice('');
-    try {await fn(c.signal);}catch(e){if(alive.current&&!c.signal.aborted){setError((e as Error).message);if(e instanceof ApiError&&e.status===401)onExpired();}}finally{if(alive.current)setBusy(false);}
+    try {await fn(c.signal);}catch(e){if(alive.current&&!c.signal.aborted){setError((e as Error).message);if(e instanceof ApiError&&e.status===401)onExpired();}}finally{if(alive.current&&controller.current===c)setBusy(false);}
   }
   useEffect(()=>{alive.current=true;void act(async signal=>{const c=await api<Connection>('/api/webdav/connection','GET',undefined,signal);if(!alive.current)return;setConnection(c);if(c.configured)await listing(signal);});return()=>{alive.current=false;controller.current?.abort();};},[]);
   async function save(e:React.FormEvent) {e.preventDefault();if(!connection)return;await act(async signal=>{const c=await api<Connection>('/api/webdav/connection','PUT',{version:connection.version,endpoint:connection.endpoint,username:connection.username,directory:connection.directory,...(password?{password}:{})},signal);if(alive.current){setConnection(c);setPassword('');setFiles([]);setNotice('连接已保存，应用密码不会显示。请测试连接。');}});}

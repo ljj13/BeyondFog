@@ -44,16 +44,22 @@ async function dav(c: Connection, env: Env, url: string, method: string, headers
   checkHost(c.endpoint, env);
   const target = new URL(url), base = new URL(c.endpoint);
   if (target.origin !== base.origin || !target.pathname.startsWith(base.pathname)) throw new Problem(400, '网盘路径超出连接范围');
-  const password = await unseal(JSON.parse(c.secret), env.WEBDAV_ENCRYPTION_KEY, c.owner);
+  let password: string;
+  try {password = await unseal(JSON.parse(c.secret), env.WEBDAV_ENCRYPTION_KEY, c.owner);}
+  catch {throw new Problem(409,'网盘密码无法解密，请重新保存连接并输入应用密码');}
   const encoded = new TextEncoder().encode(`${c.username}:${password}`);
   const auth = btoa(String.fromCharCode(...encoded));
   let r: Response;
   try {r = await fetch(url,{method,body,redirect: 'manual',signal: AbortSignal.timeout(method === 'PUT' ? 120000 : 20000),headers:{Authorization:`Basic ${auth}`,...headers}});}
-  catch {throw new Problem(504,'网盘连接超时或传输失败，请重试');}
+  // A stream violation inside `body` (size mismatch, 413) keeps its own status instead of becoming a timeout.
+  catch(e) {if(e instanceof Problem) throw e; throw new Problem(504,'网盘连接超时或传输失败，请重试');}
   if (r.status >= 300 && r.status < 400) {await r.body?.cancel(); throw new Problem(502,'网盘要求跳转；请填写最终 HTTPS 地址');}
   if ([401,403].includes(r.status)) {await r.body?.cancel(); throw new Problem(502,'网盘授权失败，请检查账号和应用密码');}
   if (r.status === 429) {await r.body?.cancel(); throw new Problem(429,'网盘请求次数已达限制，请稍后重试');}
   return r;
+}
+async function discard(request: Request) {
+  try {await request.body?.cancel();} catch { /* The body may already be gone. */ }
 }
 function folderUrl(c: Connection) {return fileUrl(c.endpoint, c.directory, '__scope__').replace(/__scope__$/, '');}
 async function ensureDirectory(c: Connection, env: Env) {
@@ -71,8 +77,8 @@ async function boundedText(response: Response, max: number) {
   return new Response(response.body.pipeThrough(new TransformStream<Uint8Array,Uint8Array>({transform(chunk,c) {count+=chunk.byteLength; if(count>max) throw new Problem(502,'目录响应过大'); c.enqueue(chunk);}}))).text();
 }
 // Read only the signature, then replay those chunks; no full image buffer.
-async function imageStream(body: ReadableStream<Uint8Array>, size?: number) {
-  const reader = limitedStream(body,size ?? MAX_IMAGE,size!==undefined).getReader();
+async function imageStream(body: ReadableStream<Uint8Array>, size?: number, exact = size !== undefined) {
+  const reader = limitedStream(body,size ?? MAX_IMAGE,exact).getReader();
   const chunks: Uint8Array[] = []; let count = 0;
   while (count < 12) {const r = await reader.read(); if(r.done) break; chunks.push(r.value); count+=r.value.length;}
   const signature = new Uint8Array(Math.min(count,12)); let offset=0;
@@ -125,24 +131,30 @@ export async function webdavApi(request: Request, env: Env, owner: string): Prom
   }
   if(path === '/api/webdav/upload' && request.method === 'POST') {
     const size=Number(request.headers.get('x-file-size'));
-    if(!Number.isSafeInteger(size)||size<12||size>MAX_IMAGE) throw new Problem(413,'每张图片须在 20 MB 以内');
+    if(!Number.isSafeInteger(size)||size<12||size>MAX_IMAGE) {await discard(request);throw new Problem(413,'每张图片须在 20 MB 以内');}
     if(!request.body) throw new Problem(400,'文件为空');
     const {type,stream}=await imageStream(request.body,size);
-    const name=`${crypto.randomUUID()}.${type==='image/jpeg'?'jpg':type==='image/png'?'png':'webp'}`;
-    await ensureDirectory(c,env);
-    const target=fileUrl(c.endpoint,c.directory,name);
-    let collision=false;
     try {
-      const r=await dav(c,env,target,'PUT',{'Content-Type':type,'If-None-Match':'*'},stream);
-      await r.body?.cancel();collision=r.status===412;
-      if(collision)throw new Problem(409,'文件名冲突，请重试上传');
-      if(![200,201,204].includes(r.status)) throw new Problem(502,'上传失败，请检查网盘容量和写入权限');
+      const name=`${crypto.randomUUID()}.${type==='image/jpeg'?'jpg':type==='image/png'?'png':'webp'}`;
+      await ensureDirectory(c,env);
+      const target=fileUrl(c.endpoint,c.directory,name);
+      let collision=false;
+      try {
+        const r=await dav(c,env,target,'PUT',{'Content-Type':type,'If-None-Match':'*'},stream);
+        await r.body?.cancel();collision=r.status===412;
+        if(collision)throw new Problem(409,'文件名冲突，请重试上传');
+        if(![200,201,204].includes(r.status)) throw new Problem(502,'上传失败，请检查网盘容量和写入权限');
+      } catch(e) {
+        // A failed streaming PUT may leave a partial file. Never delete a reported pre-existing collision.
+        if(!collision)try{const cleanup=await dav(c,env,target,'DELETE');await cleanup.body?.cancel();}catch{/* Best effort; keep the original sanitized failure. */}
+        throw e;
+      }
+      return json({name,size},201);
     } catch(e) {
-      // A failed streaming PUT may leave a partial file. Never delete a reported pre-existing collision.
-      if(!collision)try{const cleanup=await dav(c,env,target,'DELETE');await cleanup.body?.cancel();}catch{/* Best effort; keep the original sanitized failure. */}
+      // Stop pulling an upload nobody reads so the error reaches the client instead of a stalled request.
+      try{await stream.cancel();}catch{/* Already drained or errored by the failed transfer. */}
       throw e;
     }
-    return json({name,size},201);
   }
   if(path === '/api/webdav/image' && request.method === 'GET') {
     let file: string; try {file=safeFile(url.searchParams.get('file')??'');} catch {throw new Problem(400,'文件路径无效');}
@@ -152,7 +164,7 @@ export async function webdavApi(request: Request, env: Env, owner: string): Prom
     if(r.status!==200||!r.body) {await r.body?.cancel(); throw new Problem(502,'壁纸读取失败');}
     const size=r.headers.has('content-length')?Number(r.headers.get('content-length')):undefined;
     if(size!==undefined&&(!Number.isSafeInteger(size)||size<12||size>MAX_IMAGE)) {await r.body.cancel(); throw new Problem(413,'壁纸无效或超过 20 MB，请重新上传');}
-    const {type,stream}=await imageStream(r.body,size);
+    const {type,stream}=await imageStream(r.body,size,false);
     return new Response(stream,{headers:{'Content-Type':type,'Cache-Control':'no-store, private','X-Content-Type-Options':'nosniff','Content-Disposition':'inline'}});
   }
   throw new Problem(404,'接口不存在或方法不支持');
