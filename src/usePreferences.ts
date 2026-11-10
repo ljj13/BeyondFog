@@ -1,22 +1,27 @@
 import { useCallback,useEffect,useRef,useState } from 'react';
 import { api,ApiError } from './api';
 import { defaults,preferencesSchema,type Preferences } from './shared/preferences';
+import { dropCache,readCache,writeCache,type User } from './snapshotCache';
 type Snapshot={version:number;data:Preferences;recovered?:boolean};
-type User={id:string;email:string;name:string};
 export function usePreferences() {
-  const [data,setData]=useState<Preferences>(structuredClone(defaults));
-  const [user,setUser]=useState<User|null>(null);
-  const [status,setStatus]=useState('正在连接');
+  // A cached snapshot turns a reload into an instant paint; without one the shortcut area stays a
+  // skeleton until the first answer, so the default grid never flashes before the real folders.
+  const [cached]=useState(readCache);
+  const [data,setData]=useState<Preferences>(()=>cached?structuredClone(cached.data):structuredClone(defaults));
+  const [user,setUser]=useState<User|null>(()=>cached?.user??null);
+  const [ready,setReady]=useState(Boolean(cached));
+  const [status,setStatus]=useState(cached?'正在刷新':'正在连接');
   const [message,setMessage]=useState('');
   const [conflict,setConflict]=useState(false);
   const [loggingOut,setLoggingOut]=useState(false);
   const [blockedState,setBlockedState]=useState(false);
   const refresh=useRef(0),exiting=useRef(false);
-  const current=useRef(data), actor=useRef<User|null>(null), revision=useRef(0), generation=useRef(0), seq=useRef(0), dirty=useRef(false), busy=useRef(false), blocked=useRef(false), synced=useRef(false), saving=useRef<Promise<void>|null>(null);
+  const current=useRef(data), actor=useRef<User|null>(cached?.user??null), revision=useRef(cached?.version??0), generation=useRef(0), seq=useRef(0), dirty=useRef(false), busy=useRef(false), blocked=useRef(false), synced=useRef(Boolean(cached)), saving=useRef<Promise<void>|null>(null);
   const markBlocked=useCallback((value:boolean)=>{blocked.current=value;setBlockedState(value);},[]);
   const clear=useCallback(()=>{
     generation.current++;refresh.current++;actor.current=null;setUser(null);dirty.current=false;synced.current=false;markBlocked(false);setConflict(false);
     current.current=structuredClone(defaults);setData(current.current);revision.current=0;setStatus('访客模式');
+    dropCache();setReady(true);
   },[markBlocked]);
   const load=useCallback(async(force=false)=>{
     if(exiting.current)return;
@@ -24,27 +29,40 @@ export function usePreferences() {
     if(force)generation.current++;
     const gen=generation.current,requestId=++refresh.current,editSeq=seq.current;
     try {
-      const session=await api<{user:User}|null>('/api/auth/get-session');
-      if(gen!==generation.current||requestId!==refresh.current) return;
-      if(!session?.user) {if(actor.current) {clear();setMessage('会话已结束，私人内容已清除');}else setStatus('访客模式');return;}
-      // Adopt the identity before the snapshot: a failed snapshot must never look like a logout.
-      actor.current=session.user;setUser(session.user);
-      const snap=await api<Snapshot>('/api/preferences');
-      if(gen!==generation.current||requestId!==refresh.current||snap.version<revision.current) return;
+      // Both reads only need the stored cookie, so they share one round trip (and one cold Durable
+      // Object start) instead of running nose to tail.
+      const [sessionResult,snapResult]=await Promise.allSettled([api<{user:User}|null>('/api/auth/get-session'),api<Snapshot>('/api/preferences')]);
+      if(gen!==generation.current)return;
+      const session=sessionResult.status==='fulfilled'?sessionResult.value:null;
+      // Adopt the identity before any fence: a failed or superseded snapshot must never look like a logout.
+      if(session?.user){actor.current=session.user;setUser(session.user);}
+      if(requestId!==refresh.current)return;   // a newer load owns the rest of this answer
+      if(sessionResult.status==='rejected')throw sessionResult.reason;
+      if(!session?.user) {
+        if(actor.current) {clear();setMessage('会话已结束，私人内容已清除');}
+        else {setStatus('访客模式');setReady(true);}
+        return;
+      }
+      if(snapResult.status==='rejected')throw snapResult.reason;
+      const snap=snapResult.value;
+      if(snap.version<revision.current) {setReady(true);return;}
       // Explicit reload discards only edits that existed when it began; subsequent edits survive.
       if(force&&editSeq!==seq.current)return;
       if(busy.current&&!force) return;
       if((dirty.current||busy.current)&&!force) {
         if(snap.version!==revision.current) {markBlocked(true);setConflict(true);setStatus('同步冲突');setMessage('其他设备有新设置，本地编辑已保留。');}
+        setReady(true);
         return;
       }
       revision.current=snap.version;synced.current=true;
       current.current=preferencesSchema.parse(snap.data);setData(current.current);dirty.current=false;markBlocked(false);setConflict(false);setStatus('已同步');setMessage(snap.recovered?'云端设置无法读取，已载入默认值；保存一次即可覆盖。':'');
+      if(actor.current)writeCache({user:actor.current,version:snap.version,data:current.current});
+      setReady(true);
     } catch(e) {
-      if(gen!==generation.current||requestId!==refresh.current)return;
+      if(gen!==generation.current)return;
       if(e instanceof ApiError&&e.status===401) {clear();return;}
       const detail=(e as Error).message||'无法连接账号服务';
-      setStatus('连接失败');setMessage(actor.current?`无法加载云端设置，正在显示默认内容。${detail}`:detail);
+      setStatus('连接失败');setMessage(actor.current?`无法加载云端设置，正在显示默认内容。${detail}`:detail);setReady(true);
     }
   },[clear,markBlocked]);
   const flush=useCallback(async():Promise<void>=>{
@@ -56,6 +74,7 @@ export function usePreferences() {
       const snap=await api<Snapshot>('/api/preferences','PUT',{schemaVersion:2,version:revision.current,data:sent});
       if(gen!==generation.current)return;
       revision.current=snap.version;
+      if(actor.current)writeCache({user:actor.current,version:snap.version,data:current.current});
       if(seq.current===sentSeq) {dirty.current=false;setStatus('已同步');setMessage('');}
     } catch(e) {
       if(gen!==generation.current)return;
@@ -90,5 +109,5 @@ export function usePreferences() {
   },[clear,flush]);
   const retry=useCallback(()=>{markBlocked(false);if(!busy.current)saving.current=flush();},[flush,markBlocked]);
   const reload=useCallback(()=>{void load(true);},[load]);
-  return {data,user,status,message,conflict,blocked:blockedState,loggingOut,edit,login,logout,reload,retry,notify:setMessage};
+  return {data,user,status,message,conflict,blocked:blockedState,loggingOut,ready,edit,login,logout,reload,retry,notify:setMessage};
 }
