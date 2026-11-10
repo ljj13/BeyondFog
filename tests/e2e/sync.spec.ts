@@ -189,3 +189,27 @@ test('a failed preference load keeps the account visible and recovers through it
   await context.request.put('/api/preferences',{headers:{Origin:'http://127.0.0.1:5173'},data:{schemaVersion:2,version:restored.version,data:defaults}});
   await context.close();
 });
+test('a cached snapshot paints the saved layout before the network answers',async({browser})=>{
+  const context=await browser.newContext(),page=await context.newPage();
+  await login(context,page);
+  // The second visit is the one users feel: the layout must already be on screen while the
+  // snapshot request is still in flight, otherwise the page flashes the default grid again.
+  let release!:()=>void,arrived!:()=>void;
+  const barrier=new Promise<void>(r=>release=r),waiting=new Promise<void>(r=>arrived=r);
+  await page.route('**/api/preferences',async route=>{
+    if(route.request().method()==='GET'){arrived();await barrier;}
+    await route.continue();
+  });
+  await page.reload({waitUntil:'domcontentloaded'});
+  await waiting;
+  await expect(page.getByRole('link',{name:'GitHub',exact:true})).toBeVisible({timeout:2000});
+  await expect(page.getByRole('button',{name:'我的空间',exact:true})).toBeVisible({timeout:2000});
+  await expect(page.getByLabel('正在加载常用网站')).toHaveCount(0);
+  const answered=page.waitForResponse(r=>r.url().includes('/api/preferences')&&r.request().method()==='GET',{timeout:15000});
+  release();
+  await answered;
+  await page.getByRole('button',{name:'我的空间',exact:true}).click();
+  await expect(page.getByText('已同步',{exact:true})).toBeVisible({timeout:15000});
+  await page.unroute('**/api/preferences');
+  await context.close();
+});
